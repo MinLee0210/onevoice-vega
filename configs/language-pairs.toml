@@ -1,0 +1,18 @@
+# One entry per supported direction. Model paths are relative to models/.
+# Fill in as models are exported (see models/README.md for naming).
+
+[[pair]]
+source = "vi"
+target = "en"
+asr_model = "asr/vi/asr-vi-w8a16.onnx"
+mt_model = "mt/vi-en/mt-vi-en-int8.onnx"
+tts_model = "tts/en/tts-en.onnx"
+
+[[pair]]
+source = "en"
+target = "vi"
+asr_model = "asr/en-zh-ko/asr-en-w8a16.onnx"
+mt_model = "mt/en-vi/mt-en-vi-int8.onnx"
+tts_model = "tts/vi/tts-vi.onnx"
+
+# vi-zh, zh-vi, vi-ko, ko-vi follow the same shape once models land.

@@ -1,0 +1,11 @@
+[package]
+name = "onevoice"
+edition = "2021"
+version = "0.1.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"

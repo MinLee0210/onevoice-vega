@@ -1,0 +1,13 @@
+# Per-stage latency allocation, milliseconds, against the button-release
+# -> first-audio target. See CLAUDE.md -> Latency target.
+
+target_total_ms = 1200
+stretch_total_ms = 800
+
+[stage]
+vad_trim_ms = 50
+asr_ms = 450
+mt_ms = 150
+tts_first_chunk_ms = 250
+io_overhead_ms = 100
+# denoise runs during capture -> zero added latency, not budgeted here.

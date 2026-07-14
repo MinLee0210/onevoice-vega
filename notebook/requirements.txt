@@ -1,0 +1,14 @@
+# Model eval, fine-tuning, quantization, ONNX export.
+# Pin versions once the toolchain settles; kept loose during exploration.
+
+torch
+transformers
+onnx
+onnxruntime
+optimum
+qai-hub
+jupyter
+numpy
+soundfile
+jiwer          # WER
+sacrebleu      # BLEU

@@ -216,3 +216,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- OneVoice project-specific ---
+
+# Rust (src/ is the cargo workspace root; `target/` above already covers
+# src/target/, kept explicit here for clarity). Cargo.lock is committed
+# (the workspace produces a binary, `onevoice`) for reproducible builds.
+src/target/
+
+# Model artifacts (large; regenerate via notebook/05_quantization_export,
+# see models/README.md)
+models/**/*.onnx
+models/**/*.bin
+models/**/*.qnn
+
+# Raw / bulk data (never commit audio corpora, see data/README.md)
+data/raw/**
+!data/raw/.gitkeep
+data/eval/**/*.wav
+data/eval/**/*.flac
+
+# Editors
+.idea/
+.vscode/
+
