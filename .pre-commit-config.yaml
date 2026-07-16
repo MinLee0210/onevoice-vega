@@ -1,0 +1,61 @@
+# Pre-commit hooks for OneVoice (Rust crate + Python notebooks + bash).
+#
+# Enable once per clone:
+#   pip install pre-commit          # or: conda activate audio-lab (it's in requirements.txt)
+#   pre-commit install
+# Run on everything (e.g. after adding a hook):
+#   pre-commit run --all-files
+#
+# Notebooks: outputs are STRIPPED on commit (nbstripout) to keep diffs
+# clean and the repo small. The validation evidence they used to carry
+# (round-trip transcriptions, WER/BLEU, ONNX-vs-PyTorch diffs) is
+# summarized in docs/decisions/* and the commit history instead. The
+# text hooks below still exclude .ipynb so they don't fight nbstripout
+# over the JSON.
+
+exclude: '^(target/|dist/|models/)'
+
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout        # strip experiments/*.ipynb outputs + exec counts
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.ipynb$'
+      - id: end-of-file-fixer
+        exclude: '\.ipynb$'
+      - id: check-merge-conflict
+      - id: check-toml            # configs/*.toml, Cargo.toml
+      - id: check-yaml            # this file, any CI yaml
+      - id: check-case-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        # WAV eval fixtures are ~230KB; real models/bundle are gitignored.
+        # This is a backstop against force-adding a model/onnx/bundle.
+        args: ['--maxkb=512']
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck           # scripts/*.sh (bundles its own shellcheck)
+
+  # Rust hooks run via the repo's own toolchain (no rev pinning), so they
+  # match whatever `rustup` provides locally / in CI.
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false

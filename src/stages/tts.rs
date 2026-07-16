@@ -16,6 +16,7 @@
 //!     (Hangul → Latin) + the char tokenizer, not espeak — the one
 //!     language that doesn't share the Piper path. A Korean-specific
 //!     romanizer in Rust is the porting cost here.
+//!
 //! Tracked in docs/TODO.md. (The espeak-ng GPL-3.0 question is noted in
 //! docs/decisions/piper-vi-voice-license-trap.md but is NOT a blocker for
 //! the hackathon prototype — it only bites at commercial distribution.)

@@ -116,18 +116,30 @@ impl MtEngine {
     pub fn load(model_dir: impl Into<PathBuf>) -> Result<Self, OneVoiceError> {
         let model_dir = model_dir.into();
 
-        let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json"))
-            .map_err(|source| OneVoiceError::Mt(format!("failed to load tokenizer.json: {source}")))?;
+        let tokenizer =
+            Tokenizer::from_file(model_dir.join("tokenizer.json")).map_err(|source| {
+                OneVoiceError::Mt(format!("failed to load tokenizer.json: {source}"))
+            })?;
 
         let encoder = Session::builder()
             .and_then(|mut b| b.commit_from_file(model_dir.join("encoder_model.onnx")))
-            .map_err(|source| OneVoiceError::Mt(format!("failed to load encoder_model.onnx: {source}")))?;
+            .map_err(|source| {
+                OneVoiceError::Mt(format!("failed to load encoder_model.onnx: {source}"))
+            })?;
 
         let decoder = Session::builder()
             .and_then(|mut b| b.commit_from_file(model_dir.join("decoder_model_merged.onnx")))
-            .map_err(|source| OneVoiceError::Mt(format!("failed to load decoder_model_merged.onnx: {source}")))?;
+            .map_err(|source| {
+                OneVoiceError::Mt(format!(
+                    "failed to load decoder_model_merged.onnx: {source}"
+                ))
+            })?;
 
-        Ok(Self { tokenizer, encoder, decoder })
+        Ok(Self {
+            tokenizer,
+            encoder,
+            decoder,
+        })
     }
 
     pub fn translate(
@@ -149,7 +161,8 @@ impl MtEngine {
 
         let encoder_hidden_states = self.run_encoder(&input_ids, &attention_mask, seq_len)?;
 
-        let baseline_generated = self.run_decoder_greedy(&encoder_hidden_states, &attention_mask, seq_len, &[])?;
+        let baseline_generated =
+            self.run_decoder_greedy(&encoder_hidden_states, &attention_mask, seq_len, &[])?;
         let baseline_text = self.decode_ids(&baseline_generated)?;
 
         let matches = glossary.find_matches(&utterance.lang, target_lang, &utterance.text);
@@ -160,7 +173,10 @@ impl MtEngine {
             .collect();
 
         if missing_terms.is_empty() {
-            return Ok(Translation { text: baseline_text, lang: target_lang.to_string() });
+            return Ok(Translation {
+                text: baseline_text,
+                lang: target_lang.to_string(),
+            });
         }
 
         tracing::debug!(
@@ -173,15 +189,23 @@ impl MtEngine {
                 let encoding = self
                     .tokenizer
                     .encode(*target_term, false)
-                    .map_err(|source| OneVoiceError::Mt(format!("tokenizer encode failed for glossary term {target_term:?}: {source}")))?;
+                    .map_err(|source| {
+                        OneVoiceError::Mt(format!(
+                            "tokenizer encode failed for glossary term {target_term:?}: {source}"
+                        ))
+                    })?;
                 Ok(encoding.get_ids().iter().map(|&id| id as i64).collect())
             })
             .collect::<Result<_, _>>()?;
 
-        let biased_generated = self.run_decoder_greedy(&encoder_hidden_states, &attention_mask, seq_len, &bias_seqs)?;
+        let biased_generated =
+            self.run_decoder_greedy(&encoder_hidden_states, &attention_mask, seq_len, &bias_seqs)?;
         let text = self.decode_ids(&biased_generated)?;
 
-        Ok(Translation { text, lang: target_lang.to_string() })
+        Ok(Translation {
+            text,
+            lang: target_lang.to_string(),
+        })
     }
 
     fn decode_ids(&self, ids: &[i64]) -> Result<String, OneVoiceError> {
@@ -198,9 +222,13 @@ impl MtEngine {
         seq_len: usize,
     ) -> Result<ArrayD<f32>, OneVoiceError> {
         let input_ids_tensor = Tensor::from_array(([1usize, seq_len], input_ids.to_vec()))
-            .map_err(|source| OneVoiceError::Mt(format!("failed to build input_ids tensor: {source}")))?;
-        let attention_mask_tensor = Tensor::from_array(([1usize, seq_len], attention_mask.to_vec()))
-            .map_err(|source| OneVoiceError::Mt(format!("failed to build attention_mask tensor: {source}")))?;
+            .map_err(|source| {
+                OneVoiceError::Mt(format!("failed to build input_ids tensor: {source}"))
+            })?;
+        let attention_mask_tensor =
+            Tensor::from_array(([1usize, seq_len], attention_mask.to_vec())).map_err(|source| {
+                OneVoiceError::Mt(format!("failed to build attention_mask tensor: {source}"))
+            })?;
 
         let outputs = self
             .encoder
@@ -243,14 +271,16 @@ impl MtEngine {
                 &cache,
             )?;
 
-            let outputs = self
-                .decoder
-                .run(feeds)
-                .map_err(|source| OneVoiceError::Mt(format!("decoder inference failed at step {step}: {source}")))?;
+            let outputs = self.decoder.run(feeds).map_err(|source| {
+                OneVoiceError::Mt(format!("decoder inference failed at step {step}: {source}"))
+            })?;
 
-            let (shape, logits) = outputs["logits"]
-                .try_extract_tensor::<f32>()
-                .map_err(|source| OneVoiceError::Mt(format!("failed to read decoder logits: {source}")))?;
+            let (shape, logits) =
+                outputs["logits"]
+                    .try_extract_tensor::<f32>()
+                    .map_err(|source| {
+                        OneVoiceError::Mt(format!("failed to read decoder logits: {source}"))
+                    })?;
             let vocab_size = *shape.last().expect("logits tensor is never rank-0") as usize;
             let last_step_logits = &logits[logits.len() - vocab_size..];
 
@@ -286,20 +316,27 @@ impl MtEngine {
                     // Didn't continue the match -- restart it if this
                     // token happens to also be the sequence's first
                     // token, otherwise back to square one.
-                    progress[i] = if seq.len() > 1 && seq[0] == next_id { 1 } else { 0 };
+                    progress[i] = if seq.len() > 1 && seq[0] == next_id {
+                        1
+                    } else {
+                        0
+                    };
                 }
             }
 
             for (i, layer) in cache.iter_mut().enumerate() {
                 layer.decoder_key = extract_owned(&outputs, &format!("present.{i}.decoder.key"))?;
-                layer.decoder_value = extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
+                layer.decoder_value =
+                    extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
             }
             if step == 0 {
                 // Cross-attention KV is only correctly populated on the
                 // first (no-cache) call -- see the module doc comment.
                 for (i, layer) in cache.iter_mut().enumerate() {
-                    layer.encoder_key = extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
-                    layer.encoder_value = extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
+                    layer.encoder_key =
+                        extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
+                    layer.encoder_value =
+                        extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
                 }
             }
         }
@@ -331,13 +368,28 @@ impl MtEngine {
             "encoder_hidden_states".to_string(),
             tensor_input(encoder_hidden_states.clone())?,
         ));
-        feeds.push(("use_cache_branch".to_string(), tensor_input(([1usize], vec![use_cache]))?));
+        feeds.push((
+            "use_cache_branch".to_string(),
+            tensor_input(([1usize], vec![use_cache]))?,
+        ));
 
         for (i, layer) in cache.iter().enumerate() {
-            feeds.push((format!("past_key_values.{i}.decoder.key"), tensor_input(layer.decoder_key.clone())?));
-            feeds.push((format!("past_key_values.{i}.decoder.value"), tensor_input(layer.decoder_value.clone())?));
-            feeds.push((format!("past_key_values.{i}.encoder.key"), tensor_input(layer.encoder_key.clone())?));
-            feeds.push((format!("past_key_values.{i}.encoder.value"), tensor_input(layer.encoder_value.clone())?));
+            feeds.push((
+                format!("past_key_values.{i}.decoder.key"),
+                tensor_input(layer.decoder_key.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.decoder.value"),
+                tensor_input(layer.decoder_value.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.encoder.key"),
+                tensor_input(layer.encoder_key.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.encoder.value"),
+                tensor_input(layer.encoder_value.clone())?,
+            ));
         }
 
         Ok(feeds)
@@ -354,10 +406,15 @@ where
         .map_err(|source| OneVoiceError::Mt(format!("failed to build input tensor: {source}")))
 }
 
-fn extract_owned(outputs: &ort::session::SessionOutputs, name: &str) -> Result<ArrayD<f32>, OneVoiceError> {
+fn extract_owned(
+    outputs: &ort::session::SessionOutputs,
+    name: &str,
+) -> Result<ArrayD<f32>, OneVoiceError> {
     outputs[name]
         .try_extract_array::<f32>()
-        .map_err(|source| OneVoiceError::Mt(format!("failed to read decoder output {name}: {source}")))
+        .map_err(|source| {
+            OneVoiceError::Mt(format!("failed to read decoder output {name}: {source}"))
+        })
         .map(|view| view.to_owned())
 }
 
@@ -385,9 +442,14 @@ mod tests {
     #[ignore = "requires models/mt/vi-en/, see experiments/03_mt.ipynb"]
     fn translates_vi_to_en_matching_python_reference() {
         let mut engine = MtEngine::load("models/mt/vi-en").expect("failed to load MtEngine");
-        let utterance = Utterance { text: "Xin chào, bạn khỏe không?".to_string(), lang: "vi".to_string() };
+        let utterance = Utterance {
+            text: "Xin chào, bạn khỏe không?".to_string(),
+            lang: "vi".to_string(),
+        };
 
-        let translation = engine.translate(&utterance, "en", &Glossary::new()).expect("translate failed");
+        let translation = engine
+            .translate(&utterance, "en", &Glossary::new())
+            .expect("translate failed");
 
         assert_eq!(translation.text, "Hello, how are you?");
         assert_eq!(translation.lang, "en");
@@ -405,7 +467,9 @@ mod tests {
             lang: "vi".to_string(),
         };
 
-        let translation = engine.translate(&utterance, "en", &Glossary::new()).expect("translate failed");
+        let translation = engine
+            .translate(&utterance, "en", &Glossary::new())
+            .expect("translate failed");
 
         assert_eq!(translation.text, "The lift is approaching sector three.");
     }
@@ -426,7 +490,9 @@ mod tests {
             lang: "vi".to_string(),
         };
 
-        let translation = engine.translate(&utterance, "en", &glossary).expect("translate failed");
+        let translation = engine
+            .translate(&utterance, "en", &glossary)
+            .expect("translate failed");
 
         assert_eq!(translation.text, "forklift approaching sector three.");
     }
@@ -446,8 +512,13 @@ mod tests {
             lang: "vi".to_string(),
         };
 
-        let translation = engine.translate(&utterance, "en", &glossary).expect("translate failed");
+        let translation = engine
+            .translate(&utterance, "en", &glossary)
+            .expect("translate failed");
 
-        assert_eq!(translation.text, "Please wear your safety glasses before the engine works.");
+        assert_eq!(
+            translation.text,
+            "Please wear your safety glasses before the engine works."
+        );
     }
 }

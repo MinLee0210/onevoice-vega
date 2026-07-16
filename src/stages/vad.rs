@@ -46,7 +46,10 @@ impl Vad {
 
         let start = first_speech * CHUNK_SIZE;
         let end = ((last_speech + 1) * CHUNK_SIZE).min(audio.samples.len());
-        Ok(AudioBuffer::new(audio.samples[start..end].to_vec(), audio.sample_rate_hz))
+        Ok(AudioBuffer::new(
+            audio.samples[start..end].to_vec(),
+            audio.sample_rate_hz,
+        ))
     }
 
     fn speech_probabilities(&mut self, audio: &AudioBuffer) -> Result<Vec<f32>, OneVoiceError> {
@@ -59,12 +62,16 @@ impl Vad {
                 break; // drop a trailing partial chunk shorter than Silero's window
             }
 
-            let input = Tensor::from_array(([1usize, CHUNK_SIZE], chunk.to_vec()))
-                .map_err(|source| OneVoiceError::Vad(format!("failed to build input tensor: {source}")))?;
-            let sr_tensor = Tensor::from_array(((), vec![sr]))
-                .map_err(|source| OneVoiceError::Vad(format!("failed to build sr tensor: {source}")))?;
-            let state_tensor = Tensor::from_array(state.clone())
-                .map_err(|source| OneVoiceError::Vad(format!("failed to build state tensor: {source}")))?;
+            let input =
+                Tensor::from_array(([1usize, CHUNK_SIZE], chunk.to_vec())).map_err(|source| {
+                    OneVoiceError::Vad(format!("failed to build input tensor: {source}"))
+                })?;
+            let sr_tensor = Tensor::from_array(((), vec![sr])).map_err(|source| {
+                OneVoiceError::Vad(format!("failed to build sr tensor: {source}"))
+            })?;
+            let state_tensor = Tensor::from_array(state.clone()).map_err(|source| {
+                OneVoiceError::Vad(format!("failed to build state tensor: {source}"))
+            })?;
 
             let outputs = self
                 .session
@@ -73,12 +80,16 @@ impl Vad {
 
             let (_, prob) = outputs["output"]
                 .try_extract_tensor::<f32>()
-                .map_err(|source| OneVoiceError::Vad(format!("failed to read VAD output: {source}")))?;
+                .map_err(|source| {
+                    OneVoiceError::Vad(format!("failed to read VAD output: {source}"))
+                })?;
             probs.push(prob[0]);
 
             state = outputs["stateN"]
                 .try_extract_array::<f32>()
-                .map_err(|source| OneVoiceError::Vad(format!("failed to read VAD state: {source}")))?
+                .map_err(|source| {
+                    OneVoiceError::Vad(format!("failed to read VAD state: {source}"))
+                })?
                 .to_owned();
         }
 
@@ -104,7 +115,8 @@ mod tests {
     fn trims_silence_around_real_speech() {
         let mut vad = Vad::load("models/vad/model.onnx").expect("failed to load Vad");
 
-        let mut reader = hound::WavReader::open("data/eval/vad_sample_vi.wav").expect("failed to open wav fixture");
+        let mut reader = hound::WavReader::open("data/eval/vad_sample_vi.wav")
+            .expect("failed to open wav fixture");
         let sample_rate = reader.spec().sample_rate;
         let speech: Vec<f32> = reader
             .samples::<i16>()
@@ -120,7 +132,10 @@ mod tests {
 
         let trimmed = vad.trim(audio).expect("trim failed");
 
-        assert!(trimmed.samples.len() < original_len, "expected silence to be trimmed off");
+        assert!(
+            trimmed.samples.len() < original_len,
+            "expected silence to be trimmed off"
+        );
         // Allow some slack: VAD trims to chunk boundaries and speech
         // onset/offset isn't perfectly sharp, but it should land close
         // to the real speech length, not the padded total.
@@ -130,6 +145,9 @@ mod tests {
             trimmed.samples.len(),
             speech.len()
         );
-        assert!(!trimmed.samples.is_empty(), "expected the speech to be kept");
+        assert!(
+            !trimmed.samples.is_empty(),
+            "expected the speech to be kept"
+        );
     }
 }

@@ -62,11 +62,12 @@ const MAX_NEW_TOKENS: usize = 64;
 /// Never generated (generation_config's `suppress_tokens`) — mostly
 /// non-linguistic/other-task special tokens.
 const SUPPRESS_TOKEN_IDS: &[i64] = &[
-    1, 2, 7, 8, 9, 10, 14, 25, 26, 27, 28, 29, 31, 58, 59, 60, 61, 62, 63, 90, 91, 92, 93, 359, 503, 522, 542, 873,
-    893, 902, 918, 922, 931, 1350, 1853, 1982, 2460, 2627, 3246, 3253, 3268, 3536, 3846, 3961, 4183, 4667, 6585,
-    6647, 7273, 9061, 9383, 10428, 10929, 11938, 12033, 12331, 12562, 13793, 14157, 14635, 15265, 15618, 16553,
-    16604, 18362, 18956, 20075, 21675, 22520, 26130, 26161, 26435, 28279, 29464, 31650, 32302, 32470, 36865, 42863,
-    47425, 49870, 50254, 50258, 50358, 50359, 50360, 50361, 50362,
+    1, 2, 7, 8, 9, 10, 14, 25, 26, 27, 28, 29, 31, 58, 59, 60, 61, 62, 63, 90, 91, 92, 93, 359,
+    503, 522, 542, 873, 893, 902, 918, 922, 931, 1350, 1853, 1982, 2460, 2627, 3246, 3253, 3268,
+    3536, 3846, 3961, 4183, 4667, 6585, 6647, 7273, 9061, 9383, 10428, 10929, 11938, 12033, 12331,
+    12562, 13793, 14157, 14635, 15265, 15618, 16553, 16604, 18362, 18956, 20075, 21675, 22520,
+    26130, 26161, 26435, 28279, 29464, 31650, 32302, 32470, 36865, 42863, 47425, 49870, 50254,
+    50258, 50358, 50359, 50360, 50361, 50362,
 ];
 /// Only suppressed at the first generated position (generation_config's
 /// `begin_suppress_tokens`) — stops the model emitting a leading space
@@ -79,7 +80,9 @@ fn language_token_id(lang: &str) -> Result<i64, OneVoiceError> {
         "en" => Ok(50259),
         "zh" => Ok(50260),
         "ko" => Ok(50264),
-        other => Err(OneVoiceError::Asr(format!("unsupported ASR language {other:?}"))),
+        other => Err(OneVoiceError::Asr(format!(
+            "unsupported ASR language {other:?}"
+        ))),
     }
 }
 
@@ -116,16 +119,24 @@ impl AsrEngine {
     pub fn load(model_dir: impl Into<std::path::PathBuf>) -> Result<Self, OneVoiceError> {
         let model_dir = model_dir.into();
 
-        let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json"))
-            .map_err(|source| OneVoiceError::Asr(format!("failed to load tokenizer.json: {source}")))?;
+        let tokenizer =
+            Tokenizer::from_file(model_dir.join("tokenizer.json")).map_err(|source| {
+                OneVoiceError::Asr(format!("failed to load tokenizer.json: {source}"))
+            })?;
 
         let encoder = Session::builder()
             .and_then(|mut b| b.commit_from_file(model_dir.join("encoder_model.onnx")))
-            .map_err(|source| OneVoiceError::Asr(format!("failed to load encoder_model.onnx: {source}")))?;
+            .map_err(|source| {
+                OneVoiceError::Asr(format!("failed to load encoder_model.onnx: {source}"))
+            })?;
 
         let decoder = Session::builder()
             .and_then(|mut b| b.commit_from_file(model_dir.join("decoder_model_merged.onnx")))
-            .map_err(|source| OneVoiceError::Asr(format!("failed to load decoder_model_merged.onnx: {source}")))?;
+            .map_err(|source| {
+                OneVoiceError::Asr(format!(
+                    "failed to load decoder_model_merged.onnx: {source}"
+                ))
+            })?;
 
         let mel_config = BatchLogMelConfig {
             sample_rate: SAMPLE_RATE_HZ as usize,
@@ -143,13 +154,23 @@ impl AsrEngine {
             pad_to: 0,
             normalize_per_feature: false,
         };
-        let mel = BatchLogMelSpectrogram::new(mel_config)
-            .map_err(|source| OneVoiceError::Asr(format!("failed to build mel spectrogram: {source}")))?;
+        let mel = BatchLogMelSpectrogram::new(mel_config).map_err(|source| {
+            OneVoiceError::Asr(format!("failed to build mel spectrogram: {source}"))
+        })?;
 
-        Ok(Self { tokenizer, encoder, decoder, mel })
+        Ok(Self {
+            tokenizer,
+            encoder,
+            decoder,
+            mel,
+        })
     }
 
-    pub fn transcribe(&mut self, audio: &AudioBuffer, lang: &str) -> Result<Utterance, OneVoiceError> {
+    pub fn transcribe(
+        &mut self,
+        audio: &AudioBuffer,
+        lang: &str,
+    ) -> Result<Utterance, OneVoiceError> {
         tracing::debug!(lang, duration_ms = audio.duration_ms(), "running ASR");
 
         assert_eq!(
@@ -183,7 +204,10 @@ impl AsrEngine {
             .decode(&generated, true)
             .map_err(|source| OneVoiceError::Asr(format!("tokenizer decode failed: {source}")))?;
 
-        Ok(Utterance { text, lang: lang.to_string() })
+        Ok(Utterance {
+            text,
+            lang: lang.to_string(),
+        })
     }
 
     /// See module docs for why this isn't just `self.mel.compute(samples)`.
@@ -192,10 +216,9 @@ impl AsrEngine {
         padded.resize(N_SAMPLES, 0.0); // pads short audio, truncates long audio to exactly 30s
         let reflect_padded = reflect_pad(&padded, N_FFT / 2);
 
-        let raw = self
-            .mel
-            .compute(&reflect_padded)
-            .map_err(|source| OneVoiceError::Asr(format!("mel spectrogram computation failed: {source}")))?;
+        let raw = self.mel.compute(&reflect_padded).map_err(|source| {
+            OneVoiceError::Asr(format!("mel spectrogram computation failed: {source}"))
+        })?;
 
         let mut log10_trimmed = Array2::<f32>::zeros((N_MELS, N_FRAMES));
         for r in 0..N_MELS {
@@ -204,18 +227,25 @@ impl AsrEngine {
             }
         }
 
-        let max_val = log10_trimmed.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let max_val = log10_trimmed
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
         let floor = max_val - 8.0;
         log10_trimmed.mapv_inplace(|v| (v.max(floor) + 4.0) / 4.0);
         Ok(log10_trimmed)
     }
 
     fn run_encoder(&mut self, features: &Array2<f32>) -> Result<ArrayD<f32>, OneVoiceError> {
-        let input = features.clone().into_shape_with_order((1, N_MELS, N_FRAMES)).map_err(|source| {
-            OneVoiceError::Asr(format!("failed to reshape mel features: {source}"))
+        let input = features
+            .clone()
+            .into_shape_with_order((1, N_MELS, N_FRAMES))
+            .map_err(|source| {
+                OneVoiceError::Asr(format!("failed to reshape mel features: {source}"))
+            })?;
+        let input_tensor = Tensor::from_array(input).map_err(|source| {
+            OneVoiceError::Asr(format!("failed to build input_features tensor: {source}"))
         })?;
-        let input_tensor = Tensor::from_array(input)
-            .map_err(|source| OneVoiceError::Asr(format!("failed to build input_features tensor: {source}")))?;
 
         let outputs = self
             .encoder
@@ -224,7 +254,9 @@ impl AsrEngine {
 
         outputs["last_hidden_state"]
             .try_extract_array::<f32>()
-            .map_err(|source| OneVoiceError::Asr(format!("failed to read encoder output: {source}")))
+            .map_err(|source| {
+                OneVoiceError::Asr(format!("failed to read encoder output: {source}"))
+            })
             .map(|view| view.to_owned())
     }
 
@@ -234,21 +266,32 @@ impl AsrEngine {
         lang_token: i64,
     ) -> Result<Vec<u32>, OneVoiceError> {
         let mut cache: Vec<LayerCache> = (0..NUM_LAYERS).map(|_| LayerCache::empty()).collect();
-        let mut current_input_ids =
-            vec![DECODER_START_TOKEN_ID, lang_token, TASK_TRANSCRIBE_TOKEN_ID, NO_TIMESTAMPS_TOKEN_ID];
+        let mut current_input_ids = vec![
+            DECODER_START_TOKEN_ID,
+            lang_token,
+            TASK_TRANSCRIBE_TOKEN_ID,
+            NO_TIMESTAMPS_TOKEN_ID,
+        ];
         let mut generated = Vec::new();
 
         for step in 0..MAX_NEW_TOKENS {
-            let feeds = self.build_decoder_feeds(&current_input_ids, step > 0, encoder_hidden_states, &cache)?;
+            let feeds = self.build_decoder_feeds(
+                &current_input_ids,
+                step > 0,
+                encoder_hidden_states,
+                &cache,
+            )?;
 
-            let outputs = self
-                .decoder
-                .run(feeds)
-                .map_err(|source| OneVoiceError::Asr(format!("decoder inference failed at step {step}: {source}")))?;
+            let outputs = self.decoder.run(feeds).map_err(|source| {
+                OneVoiceError::Asr(format!("decoder inference failed at step {step}: {source}"))
+            })?;
 
-            let (shape, logits) = outputs["logits"]
-                .try_extract_tensor::<f32>()
-                .map_err(|source| OneVoiceError::Asr(format!("failed to read decoder logits: {source}")))?;
+            let (shape, logits) =
+                outputs["logits"]
+                    .try_extract_tensor::<f32>()
+                    .map_err(|source| {
+                        OneVoiceError::Asr(format!("failed to read decoder logits: {source}"))
+                    })?;
             let vocab_size = *shape.last().expect("logits tensor is never rank-0") as usize;
             let mut last_step_logits = logits[logits.len() - vocab_size..].to_vec();
 
@@ -264,14 +307,17 @@ impl AsrEngine {
 
             for (i, layer) in cache.iter_mut().enumerate() {
                 layer.decoder_key = extract_owned(&outputs, &format!("present.{i}.decoder.key"))?;
-                layer.decoder_value = extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
+                layer.decoder_value =
+                    extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
             }
             if step == 0 {
                 // Cross-attention KV is only correctly populated on the
                 // first (no-cache) call -- see the `mt` module doc comment.
                 for (i, layer) in cache.iter_mut().enumerate() {
-                    layer.encoder_key = extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
-                    layer.encoder_value = extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
+                    layer.encoder_key =
+                        extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
+                    layer.encoder_value =
+                        extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
                 }
             }
 
@@ -294,15 +340,36 @@ impl AsrEngine {
     ) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
         let mut feeds = Vec::with_capacity(3 + NUM_LAYERS * 4);
 
-        feeds.push(("input_ids".to_string(), tensor_input(([1usize, input_ids.len()], input_ids.to_vec()))?));
-        feeds.push(("encoder_hidden_states".to_string(), tensor_input(encoder_hidden_states.clone())?));
-        feeds.push(("use_cache_branch".to_string(), tensor_input(([1usize], vec![use_cache]))?));
+        feeds.push((
+            "input_ids".to_string(),
+            tensor_input(([1usize, input_ids.len()], input_ids.to_vec()))?,
+        ));
+        feeds.push((
+            "encoder_hidden_states".to_string(),
+            tensor_input(encoder_hidden_states.clone())?,
+        ));
+        feeds.push((
+            "use_cache_branch".to_string(),
+            tensor_input(([1usize], vec![use_cache]))?,
+        ));
 
         for (i, layer) in cache.iter().enumerate() {
-            feeds.push((format!("past_key_values.{i}.decoder.key"), tensor_input(layer.decoder_key.clone())?));
-            feeds.push((format!("past_key_values.{i}.decoder.value"), tensor_input(layer.decoder_value.clone())?));
-            feeds.push((format!("past_key_values.{i}.encoder.key"), tensor_input(layer.encoder_key.clone())?));
-            feeds.push((format!("past_key_values.{i}.encoder.value"), tensor_input(layer.encoder_value.clone())?));
+            feeds.push((
+                format!("past_key_values.{i}.decoder.key"),
+                tensor_input(layer.decoder_key.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.decoder.value"),
+                tensor_input(layer.decoder_value.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.encoder.key"),
+                tensor_input(layer.encoder_key.clone())?,
+            ));
+            feeds.push((
+                format!("past_key_values.{i}.encoder.value"),
+                tensor_input(layer.encoder_value.clone())?,
+            ));
         }
 
         Ok(feeds)
@@ -330,10 +397,15 @@ where
         .map_err(|source| OneVoiceError::Asr(format!("failed to build input tensor: {source}")))
 }
 
-fn extract_owned(outputs: &ort::session::SessionOutputs, name: &str) -> Result<ArrayD<f32>, OneVoiceError> {
+fn extract_owned(
+    outputs: &ort::session::SessionOutputs,
+    name: &str,
+) -> Result<ArrayD<f32>, OneVoiceError> {
     outputs[name]
         .try_extract_array::<f32>()
-        .map_err(|source| OneVoiceError::Asr(format!("failed to read decoder output {name}: {source}")))
+        .map_err(|source| {
+            OneVoiceError::Asr(format!("failed to read decoder output {name}: {source}"))
+        })
         .map(|view| view.to_owned())
 }
 
@@ -369,10 +441,13 @@ mod tests {
     fn transcribes_vi_speech_matching_the_known_reference() {
         let mut asr = AsrEngine::load("models/asr/vi").expect("failed to load AsrEngine");
 
-        let mut reader = hound::WavReader::open("data/eval/vad_sample_vi.wav").expect("failed to open wav fixture");
+        let mut reader = hound::WavReader::open("data/eval/vad_sample_vi.wav")
+            .expect("failed to open wav fixture");
         let sample_rate = reader.spec().sample_rate;
-        let samples: Vec<f32> =
-            reader.samples::<i16>().map(|s| s.expect("failed to read sample") as f32 / i16::MAX as f32).collect();
+        let samples: Vec<f32> = reader
+            .samples::<i16>()
+            .map(|s| s.expect("failed to read sample") as f32 / i16::MAX as f32)
+            .collect();
         let audio = AudioBuffer::new(samples, sample_rate);
 
         let utterance = asr.transcribe(&audio, "vi").expect("transcribe failed");

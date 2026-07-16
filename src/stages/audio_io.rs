@@ -39,7 +39,10 @@ impl AudioCapture {
     /// than resampling.
     pub fn capture_on_ptt(&mut self) -> Result<AudioBuffer, OneVoiceError> {
         let mut reader = hound::WavReader::open(&self.input_wav_path).map_err(|source| {
-            OneVoiceError::AudioIo(format!("failed to open {}: {source}", self.input_wav_path.display()))
+            OneVoiceError::AudioIo(format!(
+                "failed to open {}: {source}",
+                self.input_wav_path.display()
+            ))
         })?;
         let spec = reader.spec();
 
@@ -85,18 +88,27 @@ impl AudioCapture {
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer = hound::WavWriter::create(&self.output_wav_path, spec).map_err(|source| {
-            OneVoiceError::AudioIo(format!("failed to create {}: {source}", self.output_wav_path.display()))
-        })?;
+        let mut writer =
+            hound::WavWriter::create(&self.output_wav_path, spec).map_err(|source| {
+                OneVoiceError::AudioIo(format!(
+                    "failed to create {}: {source}",
+                    self.output_wav_path.display()
+                ))
+            })?;
         for &sample in &audio.samples {
             let clamped = sample.clamp(-1.0, 1.0);
-            writer.write_sample((clamped * i16::MAX as f32) as i16).map_err(|source| {
-                OneVoiceError::AudioIo(format!("failed to write sample: {source}"))
-            })?;
+            writer
+                .write_sample((clamped * i16::MAX as f32) as i16)
+                .map_err(|source| {
+                    OneVoiceError::AudioIo(format!("failed to write sample: {source}"))
+                })?;
         }
-        writer
-            .finalize()
-            .map_err(|source| OneVoiceError::AudioIo(format!("failed to finalize {}: {source}", self.output_wav_path.display())))?;
+        writer.finalize().map_err(|source| {
+            OneVoiceError::AudioIo(format!(
+                "failed to finalize {}: {source}",
+                self.output_wav_path.display()
+            ))
+        })?;
 
         tracing::debug!(
             path = %self.output_wav_path.display(),
@@ -127,7 +139,8 @@ mod tests {
 
     #[test]
     fn capture_then_play_round_trips_through_a_wav_file() {
-        let dir = std::env::temp_dir().join(format!("onevoice-audio-io-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("onevoice-audio-io-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let input_path = dir.join("input.wav");
         let output_path = dir.join("output.wav");
@@ -152,7 +165,10 @@ mod tests {
 
     #[test]
     fn capture_rejects_wrong_sample_rate() {
-        let dir = std::env::temp_dir().join(format!("onevoice-audio-io-test-rate-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "onevoice-audio-io-test-rate-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let input_path = dir.join("input.wav");
         write_test_wav(&input_path, 16_000, &[0.0; 100]);

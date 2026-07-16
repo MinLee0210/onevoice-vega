@@ -53,7 +53,11 @@ impl Pipeline {
             // The mic must capture at RNNoise's fixed 48kHz; Denoiser
             // resamples down to 16kHz for VAD/ASR on its way out (see
             // src/stages/denoise.rs module docs).
-            audio_io: AudioCapture::new(denoise::INPUT_SAMPLE_RATE_HZ, input_wav_path, output_wav_path),
+            audio_io: AudioCapture::new(
+                denoise::INPUT_SAMPLE_RATE_HZ,
+                input_wav_path,
+                output_wav_path,
+            ),
             denoiser: Denoiser::load(),
             vad: Vad::load(models_dir.join("vad/model.onnx"))?,
             asr: AsrEngine::load(models_dir.join(&pair.asr_model_dir))?,
@@ -89,7 +93,9 @@ impl Pipeline {
         tracing::info!(text = %utterance.text, lang = %utterance.lang, "ASR");
 
         let t = Instant::now();
-        let translation = self.mt.translate(&utterance, &self.target_lang, &self.glossary)?;
+        let translation = self
+            .mt
+            .translate(&utterance, &self.target_lang, &self.glossary)?;
         let mt_ms = t.elapsed().as_secs_f64() * 1000.0;
         tracing::info!(text = %translation.text, lang = %translation.lang, "MT");
 

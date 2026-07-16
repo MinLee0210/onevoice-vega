@@ -46,8 +46,9 @@ impl Glossary {
             return Ok(Self::new());
         }
 
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|source| OneVoiceError::Glossary(format!("failed to read {}: {source}", path.display())))?;
+        let contents = std::fs::read_to_string(&path).map_err(|source| {
+            OneVoiceError::Glossary(format!("failed to read {}: {source}", path.display()))
+        })?;
 
         let mut lines = contents.lines();
         let header = lines
@@ -84,7 +85,13 @@ impl Glossary {
         Ok(glossary)
     }
 
-    pub fn insert(&mut self, source_lang: &str, target_lang: &str, source_term: &str, target_term: &str) {
+    pub fn insert(
+        &mut self,
+        source_lang: &str,
+        target_lang: &str,
+        source_term: &str,
+        target_term: &str,
+    ) {
         self.terms.insert(
             key(source_lang, target_lang, source_term),
             target_term.to_string(),
@@ -101,11 +108,18 @@ impl Glossary {
     /// source term occurs (case-insensitively) as a substring of `text`.
     /// Used by `mt`'s decode to decide which target terms to bias
     /// toward — see `src/stages/mt.rs`.
-    pub fn find_matches(&self, source_lang: &str, target_lang: &str, text: &str) -> Vec<(&str, &str)> {
+    pub fn find_matches(
+        &self,
+        source_lang: &str,
+        target_lang: &str,
+        text: &str,
+    ) -> Vec<(&str, &str)> {
         let text_lower = text.to_lowercase();
         self.terms
             .iter()
-            .filter(|((sl, tl, source_term), _)| sl == source_lang && tl == target_lang && text_lower.contains(source_term.as_str()))
+            .filter(|((sl, tl, source_term), _)| {
+                sl == source_lang && tl == target_lang && text_lower.contains(source_term.as_str())
+            })
             .map(|((_, _, source_term), target_term)| (source_term.as_str(), target_term.as_str()))
             .collect()
     }
@@ -139,7 +153,10 @@ mod tests {
 
     #[test]
     fn load_returns_empty_glossary_when_file_is_missing() {
-        let dir = std::env::temp_dir().join(format!("onevoice-glossary-test-missing-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "onevoice-glossary-test-missing-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let g = Glossary::load(&dir).expect("load should not error on a missing file");
         assert_eq!(g.lookup("vi", "en", "xe nâng"), None);
@@ -148,7 +165,10 @@ mod tests {
 
     #[test]
     fn load_parses_a_real_termbase_file_in_all_directions() {
-        let dir = std::env::temp_dir().join(format!("onevoice-glossary-test-real-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "onevoice-glossary-test-real-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("termbase.tsv"),
@@ -182,9 +202,16 @@ mod tests {
 
     #[test]
     fn load_rejects_a_malformed_row() {
-        let dir = std::env::temp_dir().join(format!("onevoice-glossary-test-malformed-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "onevoice-glossary-test-malformed-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("termbase.tsv"), "concept\tvi\ten\nforklift\txe nâng\n").unwrap(); // missing the "en" column
+        std::fs::write(
+            dir.join("termbase.tsv"),
+            "concept\tvi\ten\nforklift\txe nâng\n",
+        )
+        .unwrap(); // missing the "en" column
         let err = Glossary::load(&dir).unwrap_err();
         assert!(matches!(err, OneVoiceError::Glossary(_)));
         std::fs::remove_dir_all(&dir).ok();

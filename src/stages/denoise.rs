@@ -29,7 +29,9 @@ impl Denoiser {
     /// No model file to load — `nnnoiseless` bundles RNNoise's trained
     /// weights in the crate itself (see module docs).
     pub fn load() -> Self {
-        Self { state: DenoiseState::new() }
+        Self {
+            state: DenoiseState::new(),
+        }
     }
 
     /// Denoises `audio` (must be 48kHz mono — [`INPUT_SAMPLE_RATE_HZ`])
@@ -80,7 +82,8 @@ fn resample_48k_to_16k(samples: &[f32]) -> Vec<f32> {
                 .enumerate()
                 .filter_map(|(k, &tap)| {
                     let idx = center as isize + k as isize - half as isize;
-                    (idx >= 0 && (idx as usize) < samples.len()).then(|| tap * samples[idx as usize])
+                    (idx >= 0 && (idx as usize) < samples.len())
+                        .then(|| tap * samples[idx as usize])
                 })
                 .sum()
         })
@@ -96,7 +99,11 @@ fn lowpass_taps(num_taps: usize, cutoff_hz: f32, sample_rate_hz: f32) -> Vec<f32
     let mut taps: Vec<f32> = (0..num_taps)
         .map(|n| {
             let x = n as f32 - m / 2.0;
-            let sinc = if x == 0.0 { 2.0 * fc } else { (2.0 * PI * fc * x).sin() / (PI * x) };
+            let sinc = if x == 0.0 {
+                2.0 * fc
+            } else {
+                (2.0 * PI * fc * x).sin() / (PI * x)
+            };
             let window = 0.54 - 0.46 * (2.0 * PI * n as f32 / m).cos(); // Hamming
             sinc * window
         })
@@ -116,7 +123,10 @@ mod tests {
     #[test]
     fn process_resamples_to_16khz_at_roughly_a_third_the_length() {
         let mut denoiser = Denoiser::load();
-        let one_second = AudioBuffer::new(vec![0.0; INPUT_SAMPLE_RATE_HZ as usize], INPUT_SAMPLE_RATE_HZ);
+        let one_second = AudioBuffer::new(
+            vec![0.0; INPUT_SAMPLE_RATE_HZ as usize],
+            INPUT_SAMPLE_RATE_HZ,
+        );
 
         let out = denoiser.process(one_second);
 
@@ -147,9 +157,17 @@ mod tests {
         // Above it: should be strongly attenuated by the low-pass filter.
         let high_tone = resample_48k_to_16k(&sine_at(20_000.0));
 
-        let rms = |samples: &[f32]| -> f32 { (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt() };
+        let rms = |samples: &[f32]| -> f32 {
+            (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+        };
 
-        assert!(rms(&low_tone) > 0.5, "1kHz tone should pass through mostly intact");
-        assert!(rms(&high_tone) < 0.1, "20kHz tone should be attenuated by the low-pass filter");
+        assert!(
+            rms(&low_tone) > 0.5,
+            "1kHz tone should pass through mostly intact"
+        );
+        assert!(
+            rms(&high_tone) < 0.1,
+            "20kHz tone should be attenuated by the low-pass filter"
+        );
     }
 }
