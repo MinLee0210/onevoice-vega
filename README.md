@@ -8,7 +8,7 @@ environments. See [CLAUDE.md](CLAUDE.md) for the full project spec
 ## Layout
 ```
 docs/       notes, TODOs, decisions, phase-submission drafts
-notebook/   Python — model eval, fine-tuning, quantization, ONNX export
+experiments/ Python — model eval, fine-tuning, quantization, ONNX export
 src/        Rust — on-device runtime
 models/     exported .onnx / QNN artifacts (Python -> Rust handoff)
 data/       glossary termbase, eval sets, raw corpora
@@ -19,9 +19,10 @@ Each directory has its own `README.md`.
 
 ## Quickstart
 ```sh
-# Python side (notebook/)
-pip install -r notebook/requirements.txt
+# Python side (experiments/) — use the `audio-lab` conda env, see experiments/README.md
+conda activate audio-lab
+pip install -r experiments/requirements.txt
 
 # Rust side (src/)
-cd src && cargo build
+cargo build
 ```

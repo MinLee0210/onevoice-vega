@@ -22,4 +22,22 @@ pub enum OneVoiceError {
         source_lang: String,
         target_lang: String,
     },
+
+    #[error("MT stage failed: {0}")]
+    Mt(String),
+
+    #[error("VAD stage failed: {0}")]
+    Vad(String),
+
+    #[error("ASR stage failed: {0}")]
+    Asr(String),
+
+    #[error("audio I/O failed: {0}")]
+    AudioIo(String),
+
+    #[error("TTS stage failed: {0}")]
+    Tts(String),
+
+    #[error("glossary failed: {0}")]
+    Glossary(String),
 }

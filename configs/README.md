@@ -1,6 +1,6 @@
 # configs
 
-Declarative config consumed by both `notebook/` (eval/export) and
+Declarative config consumed by both `experiments/` (eval/export) and
 `src/` (runtime) — keep it data, not code, so both sides read the same
 source of truth.
 

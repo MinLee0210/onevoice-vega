@@ -1,4 +1,4 @@
-# notebook
+# experiments
 
 Python side: model evaluation, fine-tuning, quantization, ONNX export.
 Nothing here runs on-device — the output artifact of this directory is
@@ -22,4 +22,22 @@ Flat directory of `.ipynb` files, numbered by pipeline stage:
 Exported artifacts go to `models/<stage>/`, named and versioned per
 `models/README.md`. Eval sets/termbase come from `data/`.
 
-Setup: `pip install -r requirements.txt` (or `uv sync` if using uv).
+## Setup
+
+Use the `audio-lab` conda env for everything here — not base/system
+Python:
+
+```sh
+conda activate audio-lab
+pip install -r requirements.txt
+python -m ipykernel install --user --name audio-lab --display-name "Python (audio-lab)"
+```
+
+When creating or running a notebook, make sure its kernel is set to
+`audio-lab` (Jupyter: Kernel -> Change Kernel -> Python (audio-lab)),
+so results are reproducible across the team. To execute headlessly:
+
+```sh
+jupyter nbconvert --to notebook --execute --inplace \
+  --ExecutePreprocessor.kernel_name=audio-lab 03_mt.ipynb
+```

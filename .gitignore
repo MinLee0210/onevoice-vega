@@ -224,19 +224,29 @@ __marimo__/
 # (the workspace produces a binary, `onevoice`) for reproducible builds.
 src/target/
 
-# Model artifacts (large; regenerate via notebook/05_quantization_export,
-# see models/README.md)
+# Model artifacts -- everything under models/ is downloaded/regenerated
+# by the experiments/*.ipynb notebooks (from HF repos etc.), not authored
+# here, so none of it is committed: model weights, and the config/
+# tokenizer/vocab JSON files that ship alongside them (tokenizer.json,
+# *_config.json, vocab.json, the .onnx.json Piper sidecar, etc.). Only
+# each stage's MANIFEST.md (what/where/how to regenerate) and the
+# top-level README.md are tracked -- see models/README.md.
 models/**/*.onnx
 models/**/*.bin
 models/**/*.qnn
+models/**/*.json
 
 # Raw / bulk data (never commit audio corpora, see data/README.md)
 data/raw/**
 !data/raw/.gitkeep
 data/eval/**/*.wav
 data/eval/**/*.flac
+# ...except small, intentionally-committed test fixtures (see data/README.md)
+!data/eval/vad_sample_vi.wav
+!data/eval/ptt_sample_vi_48k.wav
 
 # Editors
 .idea/
 .vscode/
 
+tokenizer.json

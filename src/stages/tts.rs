@@ -18,12 +18,24 @@ impl TtsEngine {
         })
     }
 
-    pub fn synthesize(&self, translation: &Translation) -> Result<AudioBuffer, OneVoiceError> {
+    pub fn synthesize(&mut self, translation: &Translation) -> Result<AudioBuffer, OneVoiceError> {
         tracing::debug!(
             model = %self.model_path.display(),
             lang = %translation.lang,
             "would synthesize speech here"
         );
-        todo!("Piper VITS/ONNX synthesis with streaming playback start")
+        // Deliberately not implemented yet, not just unfinished: Piper's
+        // phonemizer (piper-phonemize/espeak-ng, required for Vietnamese)
+        // is GPL-3.0, and whether embedding it in this binary GPL-taints
+        // the shipped product is an open legal question, not an
+        // engineering one -- see docs/decisions/piper-vi-voice-license-trap.md.
+        // The pipeline runs everything up through MT and reports this
+        // clearly rather than continuing past an unresolved license
+        // question.
+        Err(OneVoiceError::Tts(
+            "not implemented: Piper TTS needs a GPL-3.0 phonemizer for Vietnamese, blocked on legal review \
+             before it can be added to this binary -- see docs/decisions/piper-vi-voice-license-trap.md"
+                .to_string(),
+        ))
     }
 }

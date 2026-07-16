@@ -12,8 +12,12 @@ use crate::error::OneVoiceError;
 pub struct LanguagePair {
     pub source: String,
     pub target: String,
-    pub asr_model: PathBuf,
-    pub mt_model: PathBuf,
+    /// Directory containing `tokenizer.json`, `encoder_model.onnx`, and
+    /// `decoder_model_merged.onnx` (see models/README.md) — not a single
+    /// file, unlike `tts_model`.
+    pub asr_model_dir: PathBuf,
+    /// Same shape as `asr_model_dir` (see models/README.md).
+    pub mt_model_dir: PathBuf,
     pub tts_model: PathBuf,
 }
 
@@ -80,8 +84,8 @@ mod tests {
             [[pair]]
             source = "vi"
             target = "en"
-            asr_model = "asr/vi/asr-vi.onnx"
-            mt_model = "mt/vi-en/mt-vi-en.onnx"
+            asr_model_dir = "asr/vi"
+            mt_model_dir = "mt/vi-en"
             tts_model = "tts/en/tts-en.onnx"
         "#;
         let cfg: LanguagePairsConfig = toml::from_str(raw).unwrap();

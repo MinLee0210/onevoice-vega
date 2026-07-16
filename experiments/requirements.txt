@@ -6,8 +6,12 @@ transformers
 onnx
 onnxruntime
 optimum
+optimum-onnx   # split out of optimum as of optimum 2.x
+sentencepiece
+sacremoses
 qai-hub
 jupyter
+ipykernel
 numpy
 soundfile
 jiwer          # WER
