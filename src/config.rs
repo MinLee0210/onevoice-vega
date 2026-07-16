@@ -13,12 +13,17 @@ pub struct LanguagePair {
     pub source: String,
     pub target: String,
     /// Directory containing `tokenizer.json`, `encoder_model.onnx`, and
-    /// `decoder_model_merged.onnx` (see models/README.md) — not a single
-    /// file, unlike `tts_model`.
+    /// `decoder_model_merged.onnx` (see models/README.md).
     pub asr_model_dir: PathBuf,
     /// Same shape as `asr_model_dir` (see models/README.md).
     pub mt_model_dir: PathBuf,
-    pub tts_model: PathBuf,
+    /// Directory holding the TTS voice for this pair's *target* language
+    /// (see models/tts/<lang>/MANIFEST.md). A directory, not a single
+    /// file, because the voice isn't self-contained ONNX: Piper voices
+    /// (vi/en/zh) need the `.onnx` + its `.onnx.json`, and MMS (ko) needs
+    /// the `.onnx` + its tokenizer files. Several pairs can share one dir
+    /// (e.g. en→vi, zh→vi, ko→vi all use `tts/vi`).
+    pub tts_model_dir: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,7 +91,7 @@ mod tests {
             target = "en"
             asr_model_dir = "asr/vi"
             mt_model_dir = "mt/vi-en"
-            tts_model = "tts/en/tts-en.onnx"
+            tts_model_dir = "tts/en"
         "#;
         let cfg: LanguagePairsConfig = toml::from_str(raw).unwrap();
         assert!(cfg.find("vi", "en").is_some());

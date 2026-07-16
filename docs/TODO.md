@@ -125,39 +125,40 @@
       (~8x PhoWhisper-base), but worth rechecking if a smaller
       distillation ships.
 
-## TTS stage (vi) — license research done, implementation next
-- [x] Found Piper VI voices (rhasspy/piper-voices on HF) — but two
-      license issues found before touching implementation, see
-      docs/decisions/piper-vi-voice-license-trap.md:
-      1. Only `vi_VN-vais1000-medium` (CC BY 4.0) is commercially
-         usable; `vivos-x_low` is CC-BY-NC-SA (blocked), `25hours_single`
-         is unlicensed (unusable). Use vais1000-medium — also happens
-         to be the best quality tier available.
-      2. Piper's phonemizer (`piper-phonemize`/`espeak-ng`) is GPL-3.0.
-         Unresolved question (never answered by upstream maintainers
-         either): does embedding it in our on-device binary GPL-taint
-         the whole product? Not a blocker for prototyping, is a blocker
-         for the commercialization pitch — needs a real answer (legal
-         read or a non-GPL Vietnamese phonemizer) before Phase 3
-         architecture commits to it.
-- [x] Validate vais1000-medium synthesis quality (notebook) — done,
-      see experiments/04_tts.ipynb (round-trip TTS→ASR intelligibility
-      check, 3/4 test sentences verbatim)
-- [x] Research non-GPL phonemizer alternatives for Vietnamese — dead
-      end, see docs/decisions/pipeline-improvement-research-2026-07.md.
-      OpenPhonemizer doesn't support VI and is archived; Kyutai Pocket
-      TTS doesn't support VI yet; sherpa-onnx's own fix is
-      external-process isolation, not a real license resolution. The
-      GPL question in piper-vi-voice-license-trap.md still needs an
-      actual legal read, not more searching.
-- [ ] Rust port — deliberately not started (2026-07-16): would need the
-      GPL-3.0 phonemizer in `src/`'s real dependencies, which is a
-      license decision for the shipped binary, not something to do
-      silently while chasing an end-to-end demo. See the pipeline
-      wiring section below — the binary now stops cleanly at this
-      boundary with a clear message instead of a raw panic.
-- [ ] Human-listener QA pass on the synthesized audio (only an ASR
-      round-trip proxy has been done so far, see experiments/04_tts.ipynb)
+## TTS stage — all 4 languages validated + packaged, Rust port pending
+The device is bidirectional, so it must speak all four target languages
+(VI, EN, ZH, KO), not just Vietnamese. Stack: Piper for VI/EN/ZH
+(VITS/ONNX, espeak-ng front-end), MMS-TTS for KO (VITS/ONNX, uroman
+front-end — Piper has no Korean voice).
+- [x] **VI** — Piper `vi_VN-vais1000-medium` (CC BY 4.0). Round-trip
+      TTS→ASR: 3/4 sentences verbatim. See experiments/04_tts.ipynb
+      sections 1-4. (Two VI license notes remain documented in
+      docs/decisions/piper-vi-voice-license-trap.md: only vais1000-medium
+      is commercially usable of the 3 VI voices; espeak-ng is GPL-3.0.
+      **Neither blocks the hackathon** — GPL binds at commercial
+      distribution, not a prototype; revisit at commercialization.)
+- [x] **EN, ZH, KO (2026-07-16)** — added because the device translates
+      both ways. EN = Piper `en_US-lessac-medium`, ZH = Piper
+      `zh_CN-huayan-medium` (Mandarin), KO = `facebook/mms-tts-kor`
+      (MIT, no espeak/GPL). All validated by round-trip TTS→Whisper-small
+      ASR in experiments/04_tts.ipynb section 5: EN verbatim, ZH industrial
+      sentence clean, KO essentially verbatim. Packaged into
+      models/tts/{en,zh,ko}/. Korean needs `uroman` (Hangul→Latin) at the
+      text front-end (tokenizer is is_uroman=True) and a one-time ONNX
+      export (done in the notebook + inline in scripts/setup_models.sh);
+      the MMS ONNX matches PyTorch to ~1e-4 with noise disabled.
+- [ ] **Rust port (`src/stages/tts.rs`) — the remaining work.** Models +
+      per-language front-ends are settled; what's left is Rust VITS
+      inference (`ort`, phoneme/char-id tensor → waveform, straightforward)
+      + the text front-ends: espeak-ng phonemizer for Piper (vi/en/zh),
+      and a Korean Hangul→Latin romanizer for MMS (ko — the one language
+      not on the espeak path). The stub now reports "validated + packaged,
+      port pending" rather than the old GPL-blocker message.
+- [ ] Human-listener QA pass on the synthesized audio for all 4 languages
+      (only an ASR round-trip proxy done so far).
+- [ ] ZH greeting round-trip was slightly garbled ("你好吗" → "一號嗎")
+      while the industrial sentence was clean — recheck ZH voice quality
+      on more sentences before trusting it for the demo.
 
 ## Denoise + VAD stages — implemented, follow-ups
 - [x] Denoise: `nnnoiseless` crate (pure Rust RNNoise reimplementation,

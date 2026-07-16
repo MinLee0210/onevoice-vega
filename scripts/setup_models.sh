@@ -1,42 +1,107 @@
 #!/usr/bin/env bash
-# Downloads the ONNX model artifacts scripts/run_pipeline.sh needs into
-# models/<stage>/. See models/README.md and models/*/MANIFEST.md for
-# what each artifact is and why it was picked.
+# Populates models/<stage>/ with the ONNX artifacts scripts/run_pipeline.sh
+# needs. Two ways to do it:
 #
-# vad, asr/vi, asr/en-zh-ko, tts/vi are pre-converted ONNX already on
-# the HF Hub -- these stages are just a download (needs the
-# `huggingface_hub` Python package, nothing else -- no PyTorch, no
-# Jupyter). mt/vi-en is the odd one out: Helsinki-NLP only ships
-# PyTorch weights for opus-mt-vi-en, so that stage still needs a real
-# export (optimum + a custom tokenizer-surgery step for Marian's
-# sentencepiece tokenizer) -- this script shells out to the notebook
-# that does it (needs the full audio-lab env + Jupyter). Lifting that
-# into a standalone script is tracked in docs/TODO.md.
+#   1. BUNDLE (default) -- download one prebuilt .tar.gz and extract it.
+#      Needs only `curl` + `tar`. No conda/torch/jupyter/HF-Hub. This is
+#      the easy path for anyone who just wants to run the pipeline.
 #
-# denoise has no model file at all -- RNNoise's weights are compiled
-# into the `nnnoiseless` Rust crate, see models/denoise/MANIFEST.md.
+#   2. REBUILD -- fetch/export every model from its original source.
+#      Needs the full audio-lab env (huggingface_hub for vad/asr; plus
+#      torch/transformers/uroman for tts/ko's ONNX export; plus jupyter
+#      for the mt/vi-en export). This is how the bundle itself is made
+#      (then scripts/pack_models.sh zips models/ up).
+#
+# denoise has no model file -- RNNoise's weights are compiled into the
+# `nnnoiseless` Rust crate (models/denoise/MANIFEST.md).
 #
 # Usage:
-#   scripts/setup_models.sh              # everything (vad, asr, tts, mt)
-#   scripts/setup_models.sh vad asr tts  # skip the notebook-based MT export
-#   scripts/setup_models.sh mt           # just the MT export
+#   scripts/setup_models.sh                 # download + extract the bundle
+#   scripts/setup_models.sh bundle          # same, explicit
+#   scripts/setup_models.sh rebuild         # rebuild all stages from source
+#   scripts/setup_models.sh rebuild vad asr # rebuild just these stages
+#   scripts/setup_models.sh vad asr         # (shorthand for `rebuild vad asr`)
 #
 # Env vars:
-#   ONEVOICE_HF_PYTHON   python3 to use for the HF downloads (default:
-#                         python3 on PATH -- must have huggingface_hub
-#                         installed, e.g. via `conda activate audio-lab`)
+#   ONEVOICE_MODELS_URL   if set, download the bundle from this URL with
+#                          curl (use for a public/custom host). If unset,
+#                          the default fetches the GitHub Release asset
+#                          below with `gh` (works on the private repo).
+#   ONEVOICE_MODELS_REPO  GitHub repo for the release (default below)
+#   ONEVOICE_MODELS_TAG   release tag to pull (default below)
+#   ONEVOICE_HF_PYTHON    python3 for the rebuild path (default: python3).
+#                          Needs huggingface_hub for vad/asr; the tts/mt
+#                          stages additionally need the full audio-lab env.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+DEFAULT_MODELS_REPO="MinLee0210/OneVoice_2026"
+DEFAULT_MODELS_TAG="models-v1"
+BUNDLE_NAME="onevoice-models.tar.gz"
 PYTHON="${ONEVOICE_HF_PYTHON:-python3}"
 
-if ! "$PYTHON" -c "import huggingface_hub" >/dev/null 2>&1; then
-    echo "error: '$PYTHON -c \"import huggingface_hub\"' failed." >&2
-    echo "  pip install huggingface_hub   (or: conda activate audio-lab)" >&2
-    exit 1
-fi
+# ---------------------------------------------------------------------------
+# Bundle path (default): download one archive, extract in place.
+# The repo is private, so the default path uses `gh release download`
+# (which carries the user's GitHub auth) rather than plain curl -- an
+# unauthenticated curl of a private release asset just 404s. Setting
+# ONEVOICE_MODELS_URL switches to curl for a public/custom host.
+# ---------------------------------------------------------------------------
+download_bundle() {
+    local tmp archive
+    tmp="$(mktemp -d -t onevoice-models.XXXXXX)"
+    archive="$tmp/$BUNDLE_NAME"
+
+    if [ -n "${ONEVOICE_MODELS_URL:-}" ]; then
+        command -v curl >/dev/null 2>&1 || { echo "error: 'curl' not found." >&2; rm -rf "$tmp"; exit 1; }
+        echo "downloading model bundle (curl):"
+        echo "  $ONEVOICE_MODELS_URL"
+        if ! curl -fL --retry 3 --progress-bar -o "$archive" "$ONEVOICE_MODELS_URL"; then
+            rm -rf "$tmp"
+            echo "error: bundle download failed from $ONEVOICE_MODELS_URL" >&2
+            exit 1
+        fi
+    else
+        local repo="${ONEVOICE_MODELS_REPO:-$DEFAULT_MODELS_REPO}"
+        local tag="${ONEVOICE_MODELS_TAG:-$DEFAULT_MODELS_TAG}"
+        if ! command -v gh >/dev/null 2>&1; then
+            echo "error: 'gh' not found (needed to download from the private release)." >&2
+            echo "  install GitHub CLI + 'gh auth login', or set ONEVOICE_MODELS_URL to a" >&2
+            echo "  reachable bundle, or rebuild from source: scripts/setup_models.sh rebuild" >&2
+            rm -rf "$tmp"
+            exit 1
+        fi
+        echo "downloading model bundle (gh): $repo release $tag ($BUNDLE_NAME)"
+        if ! gh release download "$tag" --repo "$repo" --pattern "$BUNDLE_NAME" --output "$archive" --clobber; then
+            rm -rf "$tmp"
+            echo "error: 'gh release download' failed." >&2
+            echo "  - is the release published? (scripts/pack_models.sh prints the create command)" >&2
+            echo "  - are you 'gh auth login'-ed with access to $repo?" >&2
+            echo "  - or rebuild from source: scripts/setup_models.sh rebuild" >&2
+            exit 1
+        fi
+    fi
+
+    echo "extracting into models/ ..."
+    tar -xzf "$archive" -C "$REPO_ROOT"
+    rm -rf "$tmp"
+    echo "done."
+    list_artifacts
+}
+
+# ---------------------------------------------------------------------------
+# Rebuild path: fetch/export each model from its original source.
+# ---------------------------------------------------------------------------
+require_hf_python() {
+    if ! "$PYTHON" -c "import huggingface_hub" >/dev/null 2>&1; then
+        echo "error: '$PYTHON -c \"import huggingface_hub\"' failed." >&2
+        echo "  pip install huggingface_hub   (or: conda activate audio-lab)" >&2
+        exit 1
+    fi
+}
 
 download_vad() {
     echo "=== vad ==="
@@ -91,17 +156,51 @@ PYEOF
 }
 
 download_tts() {
-    echo "=== tts/vi ==="
-    mkdir -p models/tts/vi
+    # The device is bidirectional, so it speaks every target language:
+    # VI, EN, ZH (Mandarin) via Piper voices (pre-made ONNX, plain
+    # download), and KO via MMS-TTS (needs a one-time ONNX export -- so
+    # this stage needs the full audio-lab env, not just huggingface_hub,
+    # unlike vad/asr). See experiments/04_tts.ipynb for the validation.
+    echo "=== tts/vi, tts/en, tts/zh (Piper, direct download) ==="
     "$PYTHON" - <<'PYEOF'
 from huggingface_hub import hf_hub_download
-import shutil
+import shutil, os
 repo = "rhasspy/piper-voices"
-voice = "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium"
-for ext in (".onnx", ".onnx.json"):
-    src = hf_hub_download(repo, f"{voice}{ext}")
-    shutil.copyfile(src, f"models/tts/vi/vi_VN-vais1000-medium{ext}")
-print("models/tts/vi/*")
+voices = {
+    "vi": "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium",
+    "en": "en/en_US/lessac/medium/en_US-lessac-medium",
+    "zh": "zh/zh_CN/huayan/medium/zh_CN-huayan-medium",
+}
+for lang, voice in voices.items():
+    os.makedirs(f"models/tts/{lang}", exist_ok=True)
+    base = os.path.basename(voice)
+    for ext in (".onnx", ".onnx.json"):
+        src = hf_hub_download(repo, f"{voice}{ext}")
+        shutil.copyfile(src, f"models/tts/{lang}/{base}{ext}")
+    print(f"models/tts/{lang}/{base}.onnx")
+PYEOF
+
+    echo "=== tts/ko (MMS-TTS, exported to ONNX) ==="
+    "$PYTHON" - <<'PYEOF'
+import os, torch, onnxruntime as ort
+from transformers import VitsModel, AutoTokenizer
+repo = "facebook/mms-tts-kor"
+os.makedirs("models/tts/ko", exist_ok=True)
+tok = AutoTokenizer.from_pretrained(repo)          # is_uroman=True -> needs `uroman`
+model = VitsModel.from_pretrained(repo).eval()
+model.noise_scale = 0.0                             # deterministic (VITS is stochastic by default)
+model.noise_scale_duration = 0.0
+ids = tok("경보가 울리면 즉시 기계를 멈추세요.", return_tensors="pt")["input_ids"]
+onnx_path = "models/tts/ko/mms_tts_kor.onnx"
+torch.onnx.export(
+    model, (ids,), onnx_path, dynamo=False,
+    input_names=["input_ids"], output_names=["waveform"],
+    dynamic_axes={"input_ids": {0: "batch", 1: "seq"}, "waveform": {0: "batch", 1: "samples"}},
+    opset_version=15,
+)
+ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])  # smoke-test it loads
+tok.save_pretrained("models/tts/ko")
+print("models/tts/ko/mms_tts_kor.onnx")
 PYEOF
 }
 
@@ -110,24 +209,52 @@ export_mt() {
     "$REPO_ROOT/scripts/run_notebook.sh" 03_mt
 }
 
-stages=("$@")
-if [ "$#" -eq 0 ]; then
-    stages=(vad asr tts mt)
-fi
+rebuild() {
+    require_hf_python
+    local stages=("$@")
+    if [ "${#stages[@]}" -eq 0 ]; then
+        stages=(vad asr tts mt)
+    fi
+    for stage in "${stages[@]}"; do
+        case "$stage" in
+            vad) download_vad ;;
+            asr) download_asr ;;
+            tts) download_tts ;;
+            mt) export_mt ;;
+            *)
+                echo "error: unknown stage '$stage' (expected: vad, asr, tts, mt)" >&2
+                exit 1
+                ;;
+        esac
+        echo
+    done
+    list_artifacts
+}
 
-for stage in "${stages[@]}"; do
-    case "$stage" in
-        vad) download_vad ;;
-        asr) download_asr ;;
-        tts) download_tts ;;
-        mt) export_mt ;;
-        *)
-            echo "error: unknown stage '$stage' (expected: vad, asr, tts, mt)" >&2
-            exit 1
-            ;;
-    esac
-    echo
-done
+list_artifacts() {
+    echo "models/ artifacts:"
+    find models -type f \( -name '*.onnx' -o -name '*.onnx.json' \) | sort
+}
 
-echo "done. models/ artifacts:"
-find models -type f \( -name '*.onnx' -o -name '*.onnx.json' \) | sort
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+mode="${1:-bundle}"
+case "$mode" in
+    bundle)
+        download_bundle
+        ;;
+    rebuild)
+        shift
+        rebuild "$@"
+        ;;
+    vad | asr | tts | mt)
+        # shorthand: bare stage names imply a rebuild of that subset
+        rebuild "$@"
+        ;;
+    *)
+        echo "error: unknown argument '$mode'" >&2
+        echo "usage: scripts/setup_models.sh [bundle | rebuild [vad asr tts mt]]" >&2
+        exit 1
+        ;;
+esac

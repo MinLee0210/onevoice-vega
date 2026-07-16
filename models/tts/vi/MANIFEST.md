@@ -2,7 +2,7 @@
 
 - Source: rhasspy/piper-voices, vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium (Piper voices are natively ONNX --
   not exported by us)
-- Packaged: 2026-07-15
+- Packaged: 2026-07-16
 - License: CC BY 4.0 (VAIS-1000 dataset) -- the *only* commercially
   usable Vietnamese voice in this repo. Do NOT substitute
   `vivos-x_low` (CC-BY-NC-SA, blocked) or `25hours_single-low`

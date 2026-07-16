@@ -59,7 +59,7 @@ impl Pipeline {
             asr: AsrEngine::load(models_dir.join(&pair.asr_model_dir))?,
             mt: MtEngine::load(models_dir.join(&pair.mt_model_dir))?,
             glossary: Glossary::load(&data_dir.join("glossary"))?,
-            tts: TtsEngine::load(models_dir.join(&pair.tts_model))?,
+            tts: TtsEngine::load(models_dir.join(&pair.tts_model_dir))?,
         })
     }
 

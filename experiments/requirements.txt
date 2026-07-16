@@ -16,3 +16,4 @@ numpy
 soundfile
 jiwer          # WER
 sacrebleu      # BLEU
+uroman         # Korean romanization for MMS-TTS (tts/ko, is_uroman=True)

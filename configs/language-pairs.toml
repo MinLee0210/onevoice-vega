@@ -1,22 +1,57 @@
-# One entry per supported direction. Model paths are relative to models/.
-# Fill in as models are exported (see models/README.md for naming).
+# One entry per supported direction (6 total: VI paired with EN/ZH/KO,
+# both ways). Model paths are relative to models/.
 #
-# asr_model_dir and mt_model_dir both point at a directory (tokenizer.json
-# + encoder_model.onnx + decoder_model_merged.onnx), not a single file like
-# tts_model -- see models/asr/vi/MANIFEST.md and models/mt/vi-en/MANIFEST.md.
+# asr_model_dir, mt_model_dir, and tts_model_dir all point at a directory
+# (not a single file) -- see models/asr/vi/MANIFEST.md,
+# models/mt/vi-en/MANIFEST.md, models/tts/*/MANIFEST.md. tts_model_dir is
+# the *target* language's voice (what the device speaks), so several
+# pairs share one (en->vi, zh->vi, ko->vi all use tts/vi).
+#
+# Status (2026-07-16): ASR models exist for all directions (asr/vi covers
+# VI; asr/en-zh-ko covers EN/ZH/KO). TTS voices exist for all 4 languages
+# (validated in experiments/04_tts.ipynb). MT is only exported for vi-en
+# so far -- the other 5 mt_model_dir entries are the intended wiring, not
+# yet populated (see docs/TODO.md); requesting one of those pairs will
+# fail to load until its MT model lands.
 
 [[pair]]
 source = "vi"
 target = "en"
 asr_model_dir = "asr/vi"
-mt_model_dir = "mt/vi-en"
-tts_model = "tts/en/tts-en.onnx"
+mt_model_dir = "mt/vi-en"      # exported, validated end-to-end
+tts_model_dir = "tts/en"
 
 [[pair]]
 source = "en"
 target = "vi"
 asr_model_dir = "asr/en-zh-ko"
-mt_model_dir = "mt/en-vi"
-tts_model = "tts/vi/tts-vi.onnx"
+mt_model_dir = "mt/en-vi"      # not exported yet
+tts_model_dir = "tts/vi"
 
-# vi-zh, zh-vi, vi-ko, ko-vi follow the same shape once models land.
+[[pair]]
+source = "vi"
+target = "zh"
+asr_model_dir = "asr/vi"
+mt_model_dir = "mt/vi-zh"      # not exported yet
+tts_model_dir = "tts/zh"
+
+[[pair]]
+source = "zh"
+target = "vi"
+asr_model_dir = "asr/en-zh-ko"
+mt_model_dir = "mt/zh-vi"      # not exported yet
+tts_model_dir = "tts/vi"
+
+[[pair]]
+source = "vi"
+target = "ko"
+asr_model_dir = "asr/vi"
+mt_model_dir = "mt/vi-ko"      # not exported yet
+tts_model_dir = "tts/ko"
+
+[[pair]]
+source = "ko"
+target = "vi"
+asr_model_dir = "asr/en-zh-ko"
+mt_model_dir = "mt/ko-vi"      # not exported yet
+tts_model_dir = "tts/vi"
