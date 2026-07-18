@@ -120,11 +120,13 @@
       attacks the latency bottleneck CLAUDE.md calls out. WER not yet
       confirmed vs. PhoWhisper, ONNX export not yet confirmed either —
       needs a real validation pass before trusting it, not a swap-in.
-- [ ] **Prototype Zipformer Transducer as a VI ASR alternative** —
+- [x] **REJECTED: Prototype Zipformer Transducer as a VI ASR alternative** —
       Model candidate: `sherpa-onnx-zipformer-vi-30M-int8-2026-02-09`.
-      Trained on 6,000+ hours of Vietnamese speech, transducer-based (no
-      autoregressive decode loop), and 30M params (int8 quantized). Evaluate
-      WER on VIVOS test set and run latency benchmarks in `experiments/02_asr.ipynb`.
+      Evaluated on 2026-07-18. Although it showed a 15x latency improvement
+      (~20-30ms vs. ~418ms), the transcription accuracy on the standard evaluation
+      fixtures (`vad_sample_vi.wav`) was unacceptable compared to PhoWhisper-base
+      (e.g., transcribing *"nửa vòng trái đất hơn bảy năm"* as *"KHỔ SỞ VỚI HÀNH VI"*).
+      Sticking with PhoWhisper as the baseline VI ASR model for accuracy.
 - [ ] Bookmark Qwen3-ASR-0.6B (Apache-2.0, 52 languages incl. one model
       for EN/ZH/KO+VI) for later — too large for the current budget now
       (~8x PhoWhisper-base), but worth rechecking if a smaller
