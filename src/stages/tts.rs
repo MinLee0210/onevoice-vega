@@ -158,46 +158,109 @@ impl TtsEngine {
         Ok(Self { backend })
     }
 
-    pub fn synthesize(&mut self, translation: &Translation) -> Result<AudioBuffer, OneVoiceError> {
+    pub fn synthesize(
+        &mut self,
+        translation: &Translation,
+    ) -> Result<(AudioBuffer, f64), OneVoiceError> {
         tracing::debug!(lang = %translation.lang, "running TTS");
+
+        let sentences = split_sentences(&translation.text);
+        if sentences.is_empty() {
+            return Ok((AudioBuffer::new(Vec::new(), 16000), 0.0));
+        }
+
+        let mut all_samples = Vec::new();
+        let mut sample_rate_hz = 0;
+        let mut first_chunk_ms = 0.0;
 
         match &mut self.backend {
             Backend::Piper(piper) => {
-                let (samples, sample_rate_hz) = piper
-                    .create(&translation.text, false, None, None, None, None)
-                    .map_err(|source| {
-                        OneVoiceError::Tts(format!("Piper synthesis failed: {source}"))
-                    })?;
-                Ok(AudioBuffer::new(samples, sample_rate_hz))
+                for (i, sentence) in sentences.iter().enumerate() {
+                    let t = std::time::Instant::now();
+                    let (samples, rate) = piper
+                        .create(sentence, false, None, None, None, None)
+                        .map_err(|source| {
+                            OneVoiceError::Tts(format!("Piper synthesis failed: {source}"))
+                        })?;
+                    if i == 0 {
+                        first_chunk_ms = t.elapsed().as_secs_f64() * 1000.0;
+                        sample_rate_hz = rate;
+                    }
+                    all_samples.extend(samples);
+                }
             }
             Backend::Mms {
                 session,
                 vocab,
                 uroman,
             } => {
-                let ids = mms_tokenize(&translation.text, vocab, uroman);
-                let seq_len = ids.len();
-                let input = Tensor::from_array(([1usize, seq_len], ids)).map_err(|source| {
-                    OneVoiceError::Tts(format!("failed to build input tensor: {source}"))
-                })?;
+                for (i, sentence) in sentences.iter().enumerate() {
+                    let t = std::time::Instant::now();
+                    let ids = mms_tokenize(sentence, vocab, uroman);
+                    let seq_len = ids.len();
+                    let input = Tensor::from_array(([1usize, seq_len], ids)).map_err(|source| {
+                        OneVoiceError::Tts(format!("failed to build input tensor: {source}"))
+                    })?;
 
-                let outputs =
-                    session
-                        .run(ort::inputs!["input_ids" => input])
-                        .map_err(|source| {
-                            OneVoiceError::Tts(format!("MMS inference failed: {source}"))
-                        })?;
-                let (_shape, waveform) =
-                    outputs["waveform"]
+                    let outputs =
+                        session
+                            .run(ort::inputs!["input_ids" => input])
+                            .map_err(|source| {
+                                OneVoiceError::Tts(format!("MMS inference failed: {source}"))
+                            })?;
+                    let (_shape, waveform) = outputs["waveform"]
                         .try_extract_tensor::<f32>()
                         .map_err(|source| {
                             OneVoiceError::Tts(format!("failed to read waveform output: {source}"))
                         })?;
-
-                Ok(AudioBuffer::new(waveform.to_vec(), MMS_SAMPLE_RATE_HZ))
+                    if i == 0 {
+                        first_chunk_ms = t.elapsed().as_secs_f64() * 1000.0;
+                    }
+                    all_samples.extend(waveform.to_vec());
+                }
+                sample_rate_hz = MMS_SAMPLE_RATE_HZ;
             }
         }
+
+        Ok((
+            AudioBuffer::new(all_samples, sample_rate_hz),
+            first_chunk_ms,
+        ))
     }
+}
+
+/// Splits input text into sentences by looking for punctuation marks
+/// (. ? ! ; \n and their full-width Chinese equivalents).
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+    for c in text.chars() {
+        current.push(c);
+        if c == '.'
+            || c == '?'
+            || c == '!'
+            || c == '\n'
+            || c == ';'
+            || c == '。'
+            || c == '？'
+            || c == '！'
+            || c == '；'
+        {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                sentences.push(trimmed);
+            }
+            current.clear();
+        }
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        sentences.push(trimmed);
+    }
+    if sentences.is_empty() && !text.is_empty() {
+        sentences.push(text.to_string());
+    }
+    sentences
 }
 
 /// Finds the single `.onnx` file directly inside `model_dir`. Every
@@ -339,7 +402,7 @@ mod tests {
             lang: "vi".to_string(),
         };
 
-        let audio = engine.synthesize(&translation).expect("synthesize failed");
+        let (audio, _first_chunk_ms) = engine.synthesize(&translation).expect("synthesize failed");
 
         assert_eq!(audio.sample_rate_hz, 22_050);
         assert!(!audio.samples.is_empty());
@@ -371,7 +434,7 @@ mod tests {
             lang: "ko".to_string(),
         };
 
-        let audio = engine.synthesize(&translation).expect("synthesize failed");
+        let (audio, _first_chunk_ms) = engine.synthesize(&translation).expect("synthesize failed");
 
         assert_eq!(audio.sample_rate_hz, 16_000);
         assert_eq!(audio.samples.len(), 57_856);

@@ -119,12 +119,13 @@ impl Pipeline {
         );
 
         let t = Instant::now();
-        let audio_out = self.tts.synthesize(&translation)?;
+        let (audio_out, tts_first_chunk_ms) = self.tts.synthesize(&translation)?;
         let tts_ms = t.elapsed().as_secs_f64() * 1000.0;
         tracing::info!(
-            tts_ms = format!("{tts_ms:.1}"),
+            tts_first_chunk_ms = format!("{tts_first_chunk_ms:.1}"),
+            tts_total_ms = format!("{tts_ms:.1}"),
             through_tts_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
-            "TTS (through_tts_ms is the full button-release -> synthesized-audio latency CLAUDE.md targets at <=1.2s)"
+            "TTS chunked (through_tts_ms is the full button-release -> synthesized-audio latency CLAUDE.md targets at <=1.2s)"
         );
 
         let t = Instant::now();
@@ -157,10 +158,10 @@ impl Pipeline {
                 budget.stage.mt_ms
             );
         }
-        if tts_ms > budget.stage.tts_first_chunk_ms as f64 {
+        if tts_first_chunk_ms > budget.stage.tts_first_chunk_ms as f64 {
             tracing::warn!(
-                "TTS latency {:.1}ms exceeded stage budget of {}ms",
-                tts_ms,
+                "TTS first chunk latency {:.1}ms exceeded stage budget of {}ms",
+                tts_first_chunk_ms,
                 budget.stage.tts_first_chunk_ms
             );
         }
