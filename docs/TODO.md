@@ -281,11 +281,11 @@ front-end — Piper has no Korean voice).
       (downloads the 4 pre-made-ONNX stages directly from the HF Hub,
       no Jupyter needed; shells out to `run_notebook.sh 03_mt` for the
       one stage — MT — that still needs a real `optimum` export).
-- [ ] `RUST_LOG=info` output is very noisy — `ort`'s own session/arena
+- [x] `RUST_LOG=info` output is very noisy — `ort`'s own session/arena
       logging is emitted at INFO alongside `onevoice`'s own spans,
       burying the actual pipeline logs in ONNX Runtime allocator
       chatter. Worth filtering `ort` down to WARN while keeping
-      `onevoice`'s spans at INFO, not yet done.
+      `onevoice`'s spans at INFO, completed in src/main.rs.
 
 ## Future ideas (not scoped yet)
 - [ ] TTS voice cloning — let the output voice match the speaker instead
