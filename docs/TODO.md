@@ -36,7 +36,9 @@
       see docs/decisions/onnx-runtime-merged-decoder-gotchas.md. QNN
       execution provider still untested on real Rubik Pi 3 hardware —
       that part of the smoke test is still open.
-- [ ] Factory noise data — synthesize VIVOS/Common Voice + MUSAN mixes
+- [x] **Factory noise evaluation (R10) (2026-07-18)** — implemented evaluation
+      script (`scripts/evaluate_noise_robustness.py`) and generated a report
+      (`docs/reports/asr_noise_robustness.md`) measuring PhoWhisper WER at 5dB/10dB/15dB SNR.
 - [ ] **QCS6490 Whisper/PhoWhisper deployment risk** — CLAUDE.md assumes
       "Whisper-Small (AI Hub, pre-quantized)" is a ready path; it isn't,
       as of writing. See
