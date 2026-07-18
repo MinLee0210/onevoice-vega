@@ -17,15 +17,25 @@
 //! rejected approach and the decoder-bias technique that replaced it.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 
 use crate::error::OneVoiceError;
 
 type TermKey = (String, String, String); // (source_lang, target_lang, source_term.lowercase)
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Glossary {
     terms: HashMap<TermKey, String>,
+    searchers: HashMap<(String, String), (aho_corasick::AhoCorasick, Vec<String>)>,
+}
+
+impl fmt::Debug for Glossary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Glossary")
+            .field("terms", &self.terms)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Glossary {
@@ -51,40 +61,54 @@ impl Glossary {
         })?;
 
         let mut lines = contents.lines();
-        let header = lines
-            .next()
-            .ok_or_else(|| OneVoiceError::Glossary(format!("{} is empty", path.display())))?;
-        let langs: Vec<&str> = header.split('\t').skip(1).collect(); // skip the "concept" column
+        let header = lines.next().ok_or_else(|| {
+            OneVoiceError::Glossary("termbase.tsv is empty (no header row)".to_string())
+        })?;
+
+        let langs: Vec<&str> = header.split('\t').skip(1).collect();
+        if langs.is_empty() {
+            return Err(OneVoiceError::Glossary(
+                "no language columns found in termbase header".to_string(),
+            ));
+        }
 
         let mut glossary = Self::new();
-        for (i, line) in lines.enumerate() {
+
+        for (row_idx, line) in lines.enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
-            let row_num = i + 2; // 1-indexed, plus the header row
-            let fields: Vec<&str> = line.split('\t').collect();
-            if fields.len() != langs.len() + 1 {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() != langs.len() + 1 {
                 return Err(OneVoiceError::Glossary(format!(
-                    "{}:{row_num}: expected {} columns, got {}",
-                    path.display(),
+                    "row {} has {} columns, expected {} (concept + {})",
+                    row_idx + 1,
+                    parts.len(),
                     langs.len() + 1,
-                    fields.len()
+                    langs.join(", ")
                 )));
             }
-            let terms = &fields[1..];
+
+            let terms = &parts[1..];
 
             for (i, &source_lang) in langs.iter().enumerate() {
                 for (j, &target_lang) in langs.iter().enumerate() {
                     if i != j {
-                        glossary.insert(source_lang, target_lang, terms[i], terms[j]);
+                        // Insert directly into the map to avoid rebuilding searchers on every inner iteration
+                        glossary.terms.insert(
+                            key(source_lang, target_lang, terms[i]),
+                            terms[j].to_string(),
+                        );
                     }
                 }
             }
         }
 
+        glossary.build_searchers();
         Ok(glossary)
     }
 
+    #[allow(dead_code)]
     pub fn insert(
         &mut self,
         source_lang: &str,
@@ -96,6 +120,7 @@ impl Glossary {
             key(source_lang, target_lang, source_term),
             target_term.to_string(),
         );
+        self.build_searchers();
     }
 
     #[allow(dead_code)]
@@ -116,13 +141,51 @@ impl Glossary {
         text: &str,
     ) -> Vec<(&str, &str)> {
         let text_lower = text.to_lowercase();
-        self.terms
-            .iter()
-            .filter(|((sl, tl, source_term), _)| {
-                sl == source_lang && tl == target_lang && text_lower.contains(source_term.as_str())
-            })
-            .map(|((_, _, source_term), target_term)| (source_term.as_str(), target_term.as_str()))
-            .collect()
+        let pair_key = (source_lang.to_string(), target_lang.to_string());
+
+        if let Some((ac, source_terms)) = self.searchers.get(&pair_key) {
+            let mut matches = Vec::new();
+            for mat in ac.find_iter(&text_lower) {
+                let matched_source = &source_terms[mat.pattern()];
+                let term_key = (
+                    source_lang.to_string(),
+                    target_lang.to_string(),
+                    matched_source.clone(),
+                );
+                if let Some(target_term) = self.terms.get(&term_key) {
+                    matches.push((matched_source.as_str(), target_term.as_str()));
+                }
+            }
+            matches.sort_unstable();
+            matches.dedup();
+            matches
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Compiles Aho-Corasick searchers for all populated translation directions.
+    fn build_searchers(&mut self) {
+        let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
+        for (sl, tl, source_term) in self.terms.keys() {
+            groups
+                .entry((sl.clone(), tl.clone()))
+                .or_default()
+                .push(source_term.clone());
+        }
+
+        self.searchers.clear();
+        for (pair, mut source_terms) in groups {
+            source_terms.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
+            source_terms.dedup();
+
+            if let Ok(ac) = aho_corasick::AhoCorasick::builder()
+                .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+                .build(&source_terms)
+            {
+                self.searchers.insert(pair, (ac, source_terms));
+            }
+        }
     }
 }
 
