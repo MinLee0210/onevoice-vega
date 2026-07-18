@@ -54,8 +54,9 @@
       validated end-to-end (see experiments/03_mt.ipynb, tests in
       src/stages/mt.rs). Gotchas hit along the way logged in
       docs/decisions/onnx-runtime-merged-decoder-gotchas.md.
-- [ ] INT8 quantize (current export is fp32, ~500MB — over the
-      ~300MB/pair memory budget target)
+- [x] **INT8 quantize (2026-07-18)** — quantized model components to INT8
+      (reducing encoder from 178MB to 44MB, and decoder from 307MB to 77MB,
+      shrinking total MT model size from 485MB to 122MB, fitting well under the 300MB target).
 - [ ] Repeat for the other 5 directions (en-vi, vi-zh, zh-vi, vi-ko, ko-vi)
 - [x] **Wire the glossary engine into MT decode (2026-07-16)** — done via
       decoder logit biasing, not placeholder substitution (that was
