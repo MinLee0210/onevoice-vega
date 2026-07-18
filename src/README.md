@@ -33,22 +33,28 @@ src/
     ├── glossary.rs     industrial termbase lookup (the "≥95% glossary
     │                  accuracy" differentiator) — real, tested, and
     │                  consulted by `mt`'s decode (see mt.rs below)
-    └── tts.rs          Piper TTS — interface only; deliberately not
-                       implemented, not just unfinished: Piper's
-                       Vietnamese phonemizer is GPL-3.0 and needs a
-                       legal read before it goes into this binary, see
-                       docs/decisions/piper-vi-voice-license-trap.md
+    └── tts.rs          VI/EN/ZH via Piper (`piper-rs` crate: VITS +
+                       espeak-ng phonemization) and KO via Meta MMS-TTS
+                       (hand-rolled: `uroman` crate + a ported char
+                       tokenizer + raw `ort` VITS inference, no crate
+                       covers this path) — real, tested, all four
+                       languages produce genuine audio validated by
+                       round-trip ASR. See tts.rs's module docs for a
+                       real build gotcha (a broken CMake relative path
+                       in `espeak-rs-sys`'s crates.io package) and how
+                       espeak-ng's runtime data is sourced.
 ```
 
-Every ML-backed stage (`denoise`, `vad`, `asr`, `mt`) follows the same
-shape: `load(model_path) -> Result<Self, OneVoiceError>`, then one
+Every ML-backed stage (`denoise`, `vad`, `asr`, `mt`, `tts`) follows the
+same shape: `load(model_path) -> Result<Self, OneVoiceError>`, then one
 processing method — all real, all validated against a Python reference
 before being trusted (see docs/decisions/onnx-runtime-merged-decoder-gotchas.md,
-docs/decisions/mel-spec-crate-whisper-compat-bugs.md, and
-docs/decisions/glossary-runtime-enforcement-2026-07.md for the real bugs
-that validation caught in each). `glossary` is wired into `mt`'s decode
-(decoder-logit-bias, vi-en only so far). `tts` is the one genuine stub, and `audio_io` is
-file-based rather than live-hardware-based — see the tree above for why.
+docs/decisions/mel-spec-crate-whisper-compat-bugs.md,
+docs/decisions/glossary-runtime-enforcement-2026-07.md, and tts.rs's own
+module docs for the real bugs that validation caught in each). `glossary`
+is wired into `mt`'s decode (decoder-logit-bias, vi-en only so far).
+`audio_io` is file-based rather than live-hardware-based — see the tree
+above for why.
 
 ## Build / test / run
 
@@ -77,10 +83,12 @@ scripts/run_pipeline.sh in.wav out.wav -- --source vi --target en
 ```
 
 This runs the real `Pipeline` end to end: capture -> denoise -> VAD
-trim -> ASR -> MT, logs the transcription/translation and per-stage
-timing at INFO level, then exits with a clear error at the TTS stage
-(see `stages/tts.rs` above). Input WAV must be mono, 48kHz (RNNoise's
-fixed input rate).
+trim -> ASR -> MT -> TTS -> playback, logging the transcription/
+translation and per-stage timing (including the full button-release ->
+synthesized-audio latency) at INFO level. Input WAV must be mono, 48kHz
+(RNNoise's fixed input rate). Measured on a CPU dev machine (not the
+Hexagon NPU target): ~550-600ms through MT, full pipeline through TTS
+in well under CLAUDE.md's ≤1.2s target.
 
 Models are loaded from `models/<stage>/` — see `models/README.md` for
 what's there and `scripts/setup_models.sh` for how to (re)populate it.

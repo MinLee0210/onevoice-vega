@@ -63,7 +63,12 @@ impl Pipeline {
             asr: AsrEngine::load(models_dir.join(&pair.asr_model_dir))?,
             mt: MtEngine::load(models_dir.join(&pair.mt_model_dir))?,
             glossary: Glossary::load(&data_dir.join("glossary"))?,
-            tts: TtsEngine::load(models_dir.join(&pair.tts_model_dir))?,
+            // espeak-ng-data is shared across all Piper voices (vi/en/zh);
+            // ignored by the MMS (ko) backend -- see src/stages/tts.rs.
+            tts: TtsEngine::load(
+                models_dir.join(&pair.tts_model_dir),
+                &models_dir.join("tts"),
+            )?,
         })
     }
 
@@ -106,13 +111,17 @@ impl Pipeline {
             asr_ms = format!("{asr_ms:.1}"),
             mt_ms = format!("{mt_ms:.1}"),
             through_mt_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
-            "latency (CPU dev machine, NOT the Hexagon NPU target -- see CLAUDE.md -> Latency target; TTS not included, not yet implemented)"
+            "latency through MT (CPU dev machine, NOT the Hexagon NPU target -- see CLAUDE.md -> Latency target; TTS timed separately below)"
         );
 
         let t = Instant::now();
         let audio_out = self.tts.synthesize(&translation)?;
         let tts_ms = t.elapsed().as_secs_f64() * 1000.0;
-        tracing::info!(tts_ms = format!("{tts_ms:.1}"), "TTS");
+        tracing::info!(
+            tts_ms = format!("{tts_ms:.1}"),
+            through_tts_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
+            "TTS (through_tts_ms is the full button-release -> synthesized-audio latency CLAUDE.md targets at <=1.2s)"
+        );
 
         self.audio_io.play(&audio_out)
     }

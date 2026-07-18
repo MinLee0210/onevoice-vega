@@ -125,7 +125,7 @@
       (~8x PhoWhisper-base), but worth rechecking if a smaller
       distillation ships.
 
-## TTS stage — all 4 languages validated + packaged, Rust port pending
+## TTS stage — all 4 languages real, Rust port done (2026-07-17)
 The device is bidirectional, so it must speak all four target languages
 (VI, EN, ZH, KO), not just Vietnamese. Stack: Piper for VI/EN/ZH
 (VITS/ONNX, espeak-ng front-end), MMS-TTS for KO (VITS/ONNX, uroman
@@ -147,15 +147,36 @@ front-end — Piper has no Korean voice).
       text front-end (tokenizer is is_uroman=True) and a one-time ONNX
       export (done in the notebook + inline in scripts/setup_models.sh);
       the MMS ONNX matches PyTorch to ~1e-4 with noise disabled.
-- [ ] **Rust port (`src/stages/tts.rs`) — the remaining work.** Models +
-      per-language front-ends are settled; what's left is Rust VITS
-      inference (`ort`, phoneme/char-id tensor → waveform, straightforward)
-      + the text front-ends: espeak-ng phonemizer for Piper (vi/en/zh),
-      and a Korean Hangul→Latin romanizer for MMS (ko — the one language
-      not on the espeak path). The stub now reports "validated + packaged,
-      port pending" rather than the old GPL-blocker message.
+- [x] **Rust port (`src/stages/tts.rs`), 2026-07-17.** `TtsEngine` is
+      real for all 4 languages, not a stub — the pipeline runs end to
+      end through actual synthesized audio for the first time (full
+      button-release→audio latency ~550-600ms on CPU, well under
+      CLAUDE.md's ≤1.2s). VI/EN/ZH use the `piper-rs` crate (MIT) —
+      handles VITS inference + espeak-ng phonemization internally, same
+      `ort` version this project already depends on. KO (MMS) has no
+      covering crate, so it's hand-rolled: the `uroman` crate (a from-
+      scratch Rust reimplementation, verified byte-identical to Python's
+      `uroman` output) + a direct port of
+      `transformers.VitsTokenizer.prepare_for_tokenization`/`_tokenize`
+      + raw `ort` inference — the ported tokenizer produces
+      byte-identical `input_ids` to the real Python tokenizer (test in
+      tts.rs), and end-to-end synthesis matches the exact sample count
+      from experiments/04_tts.ipynb (deterministic since the ONNX export
+      has noise disabled).
+      Real build gotcha hit and fixed: `piper-rs`'s default
+      `compile-espeak-intonations` feature fails on the crates.io
+      package (a broken relative path in the vendored CMakeLists, not a
+      genuinely missing file). Building with `default-features = false`
+      fixes the build but also means espeak-ng's `phontab`/`phondata`/
+      `phonindex` runtime data files aren't generated either (compiled
+      by that same disabled step) — sourced instead from the `piper-tts`
+      PyPI package's bundled copy (pure data, arch-independent) and
+      shipped as `models/tts/espeak-ng-data/` via
+      `scripts/setup_models.sh`. Full detail in `src/stages/tts.rs`
+      module docs.
 - [ ] Human-listener QA pass on the synthesized audio for all 4 languages
-      (only an ASR round-trip proxy done so far).
+      (only an ASR round-trip proxy done so far, now through the real
+      Rust path too, not just the Python notebook).
 - [ ] ZH greeting round-trip was slightly garbled ("你好吗" → "一號嗎")
       while the industrial sentence was clean — recheck ZH voice quality
       on more sentences before trusting it for the demo.
@@ -205,7 +226,7 @@ front-end — Piper has no Korean voice).
 - [ ] Neither stage ported to the QNN execution provider yet (CPU only,
       same status as MT/ASR).
 
-## End-to-end pipeline wiring — done through MT, stops cleanly at TTS
+## End-to-end pipeline wiring — done through TTS + playback (2026-07-17)
 - [x] `src/stages/audio_io.rs` implemented for real — reads/writes WAV
       files rather than live mic/speaker (no Rubik Pi in hand yet), but
       it's the real `AudioCapture` used by `Pipeline`, not a mock.
@@ -216,22 +237,27 @@ front-end — Piper has no Korean voice).
       resampled from the existing VIVOS sample) — produced a correct,
       genuine ASR transcription and MT translation through the real
       binary, not a test harness.
-- [x] TTS is the deliberate stopping point, not an accident: turned its
-      `todo!()` into a clean `Result::Err` (was a raw panic before) so
-      the binary now exits gracefully with a clear message pointing at
-      docs/decisions/piper-vi-voice-license-trap.md, having already
-      logged the transcription/translation it did produce. Chose not to
-      add the GPL phonemizer to get real audio out — that's a
-      real license decision for a shipped binary, not one to make
-      silently while chasing a milestone.
+- [x] **TTS is no longer the stopping point (2026-07-17)** — the binary
+      now runs the complete cycle and writes real synthesized audio to
+      the output WAV, round-trip-ASR verified. Superseded the earlier
+      "stop at text output, GPL is unresolved" call: per explicit
+      direction, GPL/licensing isn't a build blocker for a hackathon
+      prototype (it binds at commercial distribution, not a demo) — see
+      docs/decisions/piper-vi-voice-license-trap.md, still the doc to
+      read before commercialization. See the TTS stage section above
+      for the Rust port itself.
 - [x] Real CLI (`clap`, derive API) — `cargo run -- --help` for full
       usage. `--source`/`--target` (default vi/en) and
       `--configs-dir`/`--models-dir`/`--data-dir` overrides, on top of
       the positional input/output WAV paths.
 - [x] Per-stage latency instrumentation added and run (see the ASR
       section above for the actual numbers) — this now measures
-      performance, not just composition. Still CPU-dev-machine-only,
-      not the Hexagon NPU target hardware.
+      performance, not just composition. Now covers the full cycle
+      through TTS: button-release → synthesized-audio measured at
+      ~550-600ms, comfortably under CLAUDE.md's ≤1.2s target (and its
+      0.8s stretch goal). Still CPU-dev-machine-only, not the Hexagon
+      NPU target hardware — a real number on real target hardware is
+      still an open question.
 - [ ] Live mic/speaker capture (cpal, gated on a real PTT button) once
       hardware exists — `audio_io.rs`'s file-based implementation is
       the one piece designed to be swapped out, everything else in

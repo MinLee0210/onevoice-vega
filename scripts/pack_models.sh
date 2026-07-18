@@ -33,6 +33,7 @@ required=(
     models/tts/en/en_US-lessac-medium.onnx
     models/tts/zh/zh_CN-huayan-medium.onnx
     models/tts/ko/mms_tts_kor.onnx
+    models/tts/espeak-ng-data/phontab
 )
 missing=()
 for f in "${required[@]}"; do

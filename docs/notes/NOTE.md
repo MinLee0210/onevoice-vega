@@ -689,3 +689,47 @@ prototype that "doesn't work" on the first try is not the same as a
 technique that doesn't work — worth one targeted look at *why* before
 writing it off, as long as the fix is specific and understood rather
 than a blind guess.
+
+## 2026-07-17: TTS actually speaks now — first real audio out of this pipeline
+
+User call: since this is a hackathon, not a shipping product, stop
+treating GPL as a build blocker (it binds at commercial distribution,
+not a prototype) — go implement TTS for real instead of leaving it
+stubbed on the license question. Recorded as a standing preference.
+
+Before writing any phonemization code by hand, checked whether a crate
+already covers Piper — it does. `piper-rs` (MIT) loads a Piper
+`.onnx`+`.onnx.json` directly and does espeak-ng phonemization + VITS
+inference internally, using the *same* `ort` version this project
+already depends on. Its default build failed on a real bug, not a
+missing dependency: `Error processing file '.../phsource/intonation':
+No such file or directory` — the file exists in the package; the error
+path (`target/debug/../phsource/intonation`) is a broken relative path
+in the crate's own CMake step. `default-features = false` (skips the
+`compile-espeak-intonations` feature) works around it — but that has a
+side effect: it also skips compiling espeak-ng's core runtime data
+(`phontab`/`phondata`/`phonindex`), which then makes espeak-ng hard
+*abort* at runtime (no Rust panic, signal 5) with zero error output —
+a much nastier failure mode than the build error. Sourced a complete
+copy from the `piper-tts` PyPI package (already installed, bundles its
+own working `espeak-ng-data/`) rather than adding a new system
+dependency for something already on hand.
+
+Korean (MMS-TTS) has no covering crate at all, so that side was
+hand-rolled: the `uroman` Rust crate (verified byte-identical to
+Python's `uroman` output before trusting it) + a direct port of HF
+transformers' `VitsTokenizer` tokenization logic (read from the actual
+library source, not guessed) + raw `ort` inference. Captured the real
+Python `input_ids` for the notebook's KO test sentences first and
+hardcoded them as the Rust test's expected values — the port matches
+exactly, not approximately.
+
+Result: all four languages (VI/EN/ZH via Piper, KO via MMS) produce
+real, round-trip-ASR-verified audio through the actual Rust path, and
+the full pipeline runs capture→denoise→VAD→ASR→MT→TTS→playback for the
+first time — measured at ~550-600ms button-release→audio on CPU, well
+under CLAUDE.md's ≤1.2s target. Re-packed and re-uploaded the
+`models-v1` release bundle to include the new `espeak-ng-data`;
+verified the real `gh release download` path end-to-end with a
+checksum match, not just the packing step. Full writeup:
+`docs/decisions/tts-rust-port-2026-07.md`.

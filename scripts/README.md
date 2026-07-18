@@ -29,7 +29,9 @@ ONEVOICE_MODELS_URL=<url> scripts/setup_models.sh   # non-default bundle host
 
 **Rebuild** — fetch/export every model from its original source. Needs
 the full `audio-lab` env (`huggingface_hub` for vad/asr; plus
-torch/transformers/uroman for tts/ko's ONNX export; plus jupyter for the
+torch/transformers/uroman for tts/ko's ONNX export; auto-installs
+`piper-tts` if needed to source tts/espeak-ng-data, the runtime phoneme
+data the vi/en/zh Rust synthesis path needs; plus jupyter for the
 mt/vi-en export). This is how the bundle itself is produced.
 
 ```sh

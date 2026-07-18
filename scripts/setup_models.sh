@@ -9,8 +9,11 @@
 #   2. REBUILD -- fetch/export every model from its original source.
 #      Needs the full audio-lab env (huggingface_hub for vad/asr; plus
 #      torch/transformers/uroman for tts/ko's ONNX export; plus jupyter
-#      for the mt/vi-en export). This is how the bundle itself is made
-#      (then scripts/pack_models.sh zips models/ up).
+#      for the mt/vi-en export). `pip install piper-tts` is auto-invoked
+#      if needed to source tts/espeak-ng-data (Piper's runtime phoneme
+#      data, required by the vi/en/zh Rust synthesis path -- see
+#      src/stages/tts.rs). This is how the bundle itself is made (then
+#      scripts/pack_models.sh zips models/ up).
 #
 # denoise has no model file -- RNNoise's weights are compiled into the
 # `nnnoiseless` Rust crate (models/denoise/MANIFEST.md).
@@ -201,6 +204,18 @@ torch.onnx.export(
 ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])  # smoke-test it loads
 tok.save_pretrained("models/tts/ko")
 print("models/tts/ko/mms_tts_kor.onnx")
+PYEOF
+
+    echo "=== tts/espeak-ng-data (Piper's runtime phoneme data, needed by vi/en/zh) ==="
+    "$PYTHON" -c "import piper" >/dev/null 2>&1 || "$PYTHON" -m pip install --quiet piper-tts
+    "$PYTHON" - <<'PYEOF'
+import os, shutil, piper
+src = os.path.join(os.path.dirname(piper.__file__), "espeak-ng-data")
+dst = "models/tts/espeak-ng-data"
+if os.path.exists(dst):
+    shutil.rmtree(dst)
+shutil.copytree(src, dst)
+print(f"models/tts/espeak-ng-data/ ({len(os.listdir(dst))} entries)")
 PYEOF
 }
 

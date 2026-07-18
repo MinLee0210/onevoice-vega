@@ -3,10 +3,10 @@
 //! "wire it up" is delegated to `pipeline`; this file has no pipeline
 //! logic itself.
 
-// ASR/TTS are still `todo!()` stubs, the glossary isn't wired into MT's
-// decode yet, and the latency budget isn't read by anything yet either
-// -- so plenty of types/fields/methods aren't exercised by any live code
-// path (only by unit tests). Remove this once those land and the normal
+// The latency budget config (configs/latency-budget.toml ->
+// LatencyBudgetConfig) is loaded but not read by anything yet -- no
+// stage currently checks its own timing against a per-stage budget, it
+// just gets logged. Remove this once that lands and the normal
 // dead_code lint is meaningful again.
 #![allow(dead_code)]
 

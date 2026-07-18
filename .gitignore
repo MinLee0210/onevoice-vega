@@ -235,6 +235,12 @@ models/**/*.onnx
 models/**/*.bin
 models/**/*.qnn
 models/**/*.json
+# espeak-ng's runtime data (phontab/phondata/phonindex/lang/voices) --
+# vendored third-party data, not extension-matched by the rules above.
+# Sourced from the piper-tts PyPI package, see
+# scripts/setup_models.sh and src/stages/tts.rs module docs.
+models/tts/espeak-ng-data/*
+!models/tts/espeak-ng-data/MANIFEST.md
 
 # Raw / bulk data (never commit audio corpora, see data/README.md)
 data/raw/**

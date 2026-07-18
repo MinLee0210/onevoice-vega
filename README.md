@@ -9,9 +9,11 @@ targets, timeline). Currently Phase 2 (technical spec submission).
 
 ## Status
 
-The pipeline runs end to end through translation on CPU (capture →
-denoise → VAD trim → ASR → MT), each stage validated against a
-Python/ONNX reference before being trusted:
+The pipeline runs end to end — capture → denoise → VAD trim → ASR → MT
+→ TTS → playback — on CPU, producing real synthesized audio, each stage
+validated against a Python reference before being trusted. Measured
+button-release → synthesized-audio latency: **~550-600ms**, well under
+CLAUDE.md's ≤1.2s target (CPU dev machine, not the Hexagon NPU target):
 
 | Stage | Status |
 |---|---|
@@ -19,7 +21,7 @@ Python/ONNX reference before being trusted:
 | VAD (Silero) | real, tested |
 | ASR (PhoWhisper VI / Whisper-small EN·ZH·KO) | real, tested |
 | MT (Opus-MT vi-en) + glossary term enforcement | real, tested |
-| TTS (Piper) | interface only — blocked on an open GPL license question, see [docs/decisions/piper-vi-voice-license-trap.md](docs/decisions/piper-vi-voice-license-trap.md) |
+| TTS: VI/EN/ZH (Piper) + KO (MMS-TTS) | real, tested — round-trip ASR verified for all 4 languages, see [src/stages/tts.rs](src/stages/tts.rs) |
 | Audio I/O | file-based (WAV in/out) — live mic/speaker (cpal) pending real hardware |
 | Hexagon NPU (QNN) | untested — everything above runs on CPU so far |
 
@@ -57,7 +59,7 @@ scripts/run_pipeline.sh
 ```
 
 `scripts/run_pipeline.sh` builds `--release` and runs `onevoice`
-end to end, logging the transcription/translation and per-stage
-latency, then exits cleanly at the TTS stage (see Status above). See
+end to end — translation *and* synthesized speech out — logging the
+transcription/translation and per-stage latency (see Status above). See
 [scripts/README.md](scripts/README.md) for running individual stages,
 your own WAV files, or the `experiments/` notebooks directly.

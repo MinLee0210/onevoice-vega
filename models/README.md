@@ -6,10 +6,13 @@ the language-agnostic interface point from CLAUDE.md.
 
 Binaries are gitignored (too large for git); only this README and the
 per-stage manifest files are tracked. Regenerate via
-`scripts/setup_models.sh` (plain HF Hub downloads for `vad`/`asr`/`tts`;
-shells out to `scripts/run_notebook.sh 03_mt` for `mt`, which still
-needs a real optimum export — see that script's header and
-`docs/TODO.md`).
+`scripts/setup_models.sh` — plain HF Hub downloads for `vad`/`asr` and
+most of `tts` (VI/EN/ZH Piper voices); `tts` also does a one-time ONNX
+export for the KO voice (MMS-TTS) and sources espeak-ng's runtime data
+from the `piper-tts` PyPI package (see `src/stages/tts.rs` module docs
+for why). `mt` shells out to `scripts/run_notebook.sh 03_mt`, which
+still needs a real optimum export — see that script's header and
+`docs/TODO.md`.
 
 ```
 models/
@@ -18,7 +21,9 @@ models/
 ├── vad/
 ├── asr/       one subfolder per language (vi/, en-zh-ko/, ...)
 ├── mt/        one subfolder per language pair (vi-en/, vi-zh/, vi-ko/, ...)
-└── tts/       one subfolder per language
+└── tts/       one subfolder per language, plus a shared
+               espeak-ng-data/ (Piper's runtime phoneme data,
+               used by vi/en/zh, not per-language)
 ```
 
 Filenames follow each artifact's `optimum`/upstream export convention
