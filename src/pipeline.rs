@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::config::Config;
+use crate::config::{Config, LatencyBudgetConfig};
 use crate::error::OneVoiceError;
 use crate::stages::asr::AsrEngine;
 use crate::stages::audio_io::AudioCapture;
@@ -15,6 +15,16 @@ use crate::stages::glossary::Glossary;
 use crate::stages::mt::MtEngine;
 use crate::stages::tts::TtsEngine;
 use crate::stages::vad::Vad;
+
+pub struct PipelineConfig<'a> {
+    pub config: &'a Config,
+    pub models_dir: &'a Path,
+    pub data_dir: &'a Path,
+    pub source_lang: &'a str,
+    pub target_lang: &'a str,
+    pub input_wav_path: &'a Path,
+    pub output_wav_path: &'a Path,
+}
 
 pub struct Pipeline {
     source_lang: String,
@@ -26,49 +36,43 @@ pub struct Pipeline {
     mt: MtEngine,
     glossary: Glossary,
     tts: TtsEngine,
+    latency_budget: LatencyBudgetConfig,
 }
 
 impl Pipeline {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        config: &Config,
-        models_dir: &Path,
-        data_dir: &Path,
-        source_lang: &str,
-        target_lang: &str,
-        input_wav_path: &Path,
-        output_wav_path: &Path,
-    ) -> Result<Self, OneVoiceError> {
-        let pair = config
+    pub fn new(cfg: PipelineConfig) -> Result<Self, OneVoiceError> {
+        let pair = cfg
+            .config
             .language_pairs
-            .find(source_lang, target_lang)
+            .find(cfg.source_lang, cfg.target_lang)
             .ok_or_else(|| OneVoiceError::LanguagePairNotFound {
-                source_lang: source_lang.to_string(),
-                target_lang: target_lang.to_string(),
+                source_lang: cfg.source_lang.to_string(),
+                target_lang: cfg.target_lang.to_string(),
             })?;
 
         Ok(Self {
-            source_lang: source_lang.to_string(),
-            target_lang: target_lang.to_string(),
+            source_lang: cfg.source_lang.to_string(),
+            target_lang: cfg.target_lang.to_string(),
             // The mic must capture at RNNoise's fixed 48kHz; Denoiser
             // resamples down to 16kHz for VAD/ASR on its way out (see
             // src/stages/denoise.rs module docs).
             audio_io: AudioCapture::new(
                 denoise::INPUT_SAMPLE_RATE_HZ,
-                input_wav_path,
-                output_wav_path,
+                cfg.input_wav_path,
+                cfg.output_wav_path,
             ),
             denoiser: Denoiser::load(),
-            vad: Vad::load(models_dir.join("vad/model.onnx"))?,
-            asr: AsrEngine::load(models_dir.join(&pair.asr_model_dir))?,
-            mt: MtEngine::load(models_dir.join(&pair.mt_model_dir))?,
-            glossary: Glossary::load(&data_dir.join("glossary"))?,
+            vad: Vad::load(cfg.models_dir.join("vad/model.onnx"))?,
+            asr: AsrEngine::load(cfg.models_dir.join(&pair.asr_model_dir))?,
+            mt: MtEngine::load(cfg.models_dir.join(&pair.mt_model_dir))?,
+            glossary: Glossary::load(&cfg.data_dir.join("glossary"))?,
             // espeak-ng-data is shared across all Piper voices (vi/en/zh);
             // ignored by the MMS (ko) backend -- see src/stages/tts.rs.
             tts: TtsEngine::load(
-                models_dir.join(&pair.tts_model_dir),
-                &models_dir.join("tts"),
+                cfg.models_dir.join(&pair.tts_model_dir),
+                &cfg.models_dir.join("tts"),
             )?,
+            latency_budget: cfg.config.latency_budget,
         })
     }
 
@@ -123,6 +127,72 @@ impl Pipeline {
             "TTS (through_tts_ms is the full button-release -> synthesized-audio latency CLAUDE.md targets at <=1.2s)"
         );
 
-        self.audio_io.play(&audio_out)
+        let t = Instant::now();
+        self.audio_io.play(&audio_out)?;
+        let play_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        let io_overhead_ms = capture_ms + play_ms;
+        let total_ms = cycle_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Latency budget checks
+        let budget = self.latency_budget;
+        if vad_ms > budget.stage.vad_trim_ms as f64 {
+            tracing::warn!(
+                "VAD latency {:.1}ms exceeded stage budget of {}ms",
+                vad_ms,
+                budget.stage.vad_trim_ms
+            );
+        }
+        if asr_ms > budget.stage.asr_ms as f64 {
+            tracing::warn!(
+                "ASR latency {:.1}ms exceeded stage budget of {}ms",
+                asr_ms,
+                budget.stage.asr_ms
+            );
+        }
+        if mt_ms > budget.stage.mt_ms as f64 {
+            tracing::warn!(
+                "MT latency {:.1}ms exceeded stage budget of {}ms",
+                mt_ms,
+                budget.stage.mt_ms
+            );
+        }
+        if tts_ms > budget.stage.tts_first_chunk_ms as f64 {
+            tracing::warn!(
+                "TTS latency {:.1}ms exceeded stage budget of {}ms",
+                tts_ms,
+                budget.stage.tts_first_chunk_ms
+            );
+        }
+        if io_overhead_ms > budget.stage.io_overhead_ms as f64 {
+            tracing::warn!(
+                "I/O overhead latency {:.1}ms exceeded stage budget of {}ms",
+                io_overhead_ms,
+                budget.stage.io_overhead_ms
+            );
+        }
+
+        if total_ms > budget.target_total_ms as f64 {
+            tracing::warn!(
+                "Total latency {:.1}ms exceeded target total budget of {}ms",
+                total_ms,
+                budget.target_total_ms
+            );
+        } else if total_ms > budget.stretch_total_ms as f64 {
+            tracing::info!(
+                "Total latency {:.1}ms met target total budget of {}ms but exceeded stretch budget of {}ms",
+                total_ms,
+                budget.target_total_ms,
+                budget.stretch_total_ms
+            );
+        } else {
+            tracing::info!(
+                "Total latency {:.1}ms met stretch budget of {}ms",
+                total_ms,
+                budget.stretch_total_ms
+            );
+        }
+
+        Ok(())
     }
 }

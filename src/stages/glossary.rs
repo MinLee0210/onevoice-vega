@@ -98,6 +98,7 @@ impl Glossary {
         );
     }
 
+    #[allow(dead_code)]
     pub fn lookup(&self, source_lang: &str, target_lang: &str, source_term: &str) -> Option<&str> {
         self.terms
             .get(&key(source_lang, target_lang, source_term))

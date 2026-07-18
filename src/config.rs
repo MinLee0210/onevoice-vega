@@ -40,7 +40,7 @@ impl LanguagePairsConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct LatencyStageBudget {
     pub vad_trim_ms: u32,
     pub asr_ms: u32,
@@ -49,7 +49,7 @@ pub struct LatencyStageBudget {
     pub io_overhead_ms: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct LatencyBudgetConfig {
     pub target_total_ms: u32,
     pub stretch_total_ms: u32,

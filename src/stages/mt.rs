@@ -66,11 +66,6 @@ use crate::stages::glossary::Glossary;
 const NUM_LAYERS: usize = 6;
 const NUM_HEADS: usize = 8;
 const HEAD_DIM: usize = 64;
-/// == pad_token_id (see models/mt/vi-en/MANIFEST.md / generation_config.json).
-const DECODER_START_TOKEN_ID: i64 = 53738;
-const EOS_TOKEN_ID: i64 = 0;
-/// Never generated (generation_config's `bad_words_ids`).
-const PAD_TOKEN_ID: i64 = 53738;
 const MAX_NEW_TOKENS: usize = 64;
 /// Logit bias added to a glossary target sequence's next expected token.
 /// Validated in experiments/03_mt.ipynb section 7b: the real logit gap
@@ -107,6 +102,8 @@ pub struct MtEngine {
     tokenizer: Tokenizer,
     encoder: Session,
     decoder: Session,
+    pad_token_id: i64,
+    eos_token_id: i64,
 }
 
 impl MtEngine {
@@ -135,10 +132,22 @@ impl MtEngine {
                 ))
             })?;
 
+        let pad_token_id = tokenizer
+            .token_to_id("<pad>")
+            .ok_or_else(|| OneVoiceError::Mt("vocab has no <pad> token".to_string()))?
+            as i64;
+
+        let eos_token_id = tokenizer
+            .token_to_id("</s>")
+            .ok_or_else(|| OneVoiceError::Mt("vocab has no </s> token".to_string()))?
+            as i64;
+
         Ok(Self {
             tokenizer,
             encoder,
             decoder,
+            pad_token_id,
+            eos_token_id,
         })
     }
 
@@ -155,7 +164,7 @@ impl MtEngine {
             .encode(utterance.text.as_str(), false)
             .map_err(|source| OneVoiceError::Mt(format!("tokenizer encode failed: {source}")))?;
         let mut input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-        input_ids.push(EOS_TOKEN_ID); // tokenizer.json has no post-processor to add this automatically
+        input_ids.push(self.eos_token_id); // tokenizer.json has no post-processor to add this automatically
         let seq_len = input_ids.len();
         let attention_mask = vec![1i64; seq_len];
 
@@ -252,7 +261,7 @@ impl MtEngine {
         bias_seqs: &[Vec<i64>],
     ) -> Result<Vec<i64>, OneVoiceError> {
         let mut cache: Vec<LayerCache> = (0..NUM_LAYERS).map(|_| LayerCache::empty()).collect();
-        let mut next_id = DECODER_START_TOKEN_ID;
+        let mut next_id = self.pad_token_id;
         let mut generated: Vec<i64> = Vec::new();
         // Index of the next expected token in each bias_seqs entry --
         // exactly one biased position per sequence at any time, not
@@ -297,8 +306,8 @@ impl MtEngine {
                 &biased_logits
             };
 
-            next_id = argmax_excluding(step_logits, PAD_TOKEN_ID as usize) as i64;
-            if next_id == EOS_TOKEN_ID {
+            next_id = argmax_excluding(step_logits, self.pad_token_id as usize) as i64;
+            if next_id == self.eos_token_id {
                 break;
             }
             generated.push(next_id);
@@ -453,6 +462,23 @@ mod tests {
 
         assert_eq!(translation.text, "Hello, how are you?");
         assert_eq!(translation.lang, "en");
+    }
+
+    #[test]
+    #[ignore = "requires models/mt/en-vi/"]
+    fn translates_en_to_vi_matching_python_reference() {
+        let mut engine = MtEngine::load("models/mt/en-vi").expect("failed to load MtEngine");
+        let utterance = Utterance {
+            text: "Hello, how are you?".to_string(),
+            lang: "en".to_string(),
+        };
+
+        let translation = engine
+            .translate(&utterance, "vi", &Glossary::new())
+            .expect("translate failed");
+
+        assert_eq!(translation.text, "Xin chào, anh khỏe không?");
+        assert_eq!(translation.lang, "vi");
     }
 
     /// The plain (no-glossary) baseline behavior from before glossary

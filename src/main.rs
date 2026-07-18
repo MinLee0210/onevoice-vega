@@ -4,11 +4,8 @@
 //! logic itself.
 
 // The latency budget config (configs/latency-budget.toml ->
-// LatencyBudgetConfig) is loaded but not read by anything yet -- no
-// stage currently checks its own timing against a per-stage budget, it
-// just gets logged. Remove this once that lands and the normal
-// dead_code lint is meaningful again.
-#![allow(dead_code)]
+// LatencyBudgetConfig) is loaded and checked at the end of each run.
+// No extra dead_code warnings should trigger.
 
 mod audio;
 mod config;
@@ -21,7 +18,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use config::Config;
-use pipeline::Pipeline;
+use pipeline::{Pipeline, PipelineConfig};
 
 /// OneVoice: on-device VI<->EN/ZH/KO speech translation for noisy
 /// industrial environments. See CLAUDE.md for the full project spec.
@@ -62,7 +59,9 @@ struct Cli {
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("onevoice=info,ort=warn"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let cli = Cli::parse();
 
@@ -71,16 +70,17 @@ fn main() {
         std::process::exit(1);
     });
 
-    let mut pipeline = Pipeline::new(
-        &config,
-        &cli.models_dir,
-        &cli.data_dir,
-        &cli.source,
-        &cli.target,
-        &cli.input_wav,
-        &cli.output_wav,
-    )
-    .unwrap_or_else(|e| {
+    let pipeline_config = PipelineConfig {
+        config: &config,
+        models_dir: &cli.models_dir,
+        data_dir: &cli.data_dir,
+        source_lang: &cli.source,
+        target_lang: &cli.target,
+        input_wav_path: &cli.input_wav,
+        output_wav_path: &cli.output_wav,
+    };
+
+    let mut pipeline = Pipeline::new(pipeline_config).unwrap_or_else(|e| {
         tracing::error!("failed to build pipeline: {e}");
         std::process::exit(1);
     });
