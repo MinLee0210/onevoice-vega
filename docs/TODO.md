@@ -120,10 +120,16 @@
       attacks the latency bottleneck CLAUDE.md calls out. WER not yet
       confirmed vs. PhoWhisper, ONNX export not yet confirmed either —
       needs a real validation pass before trusting it, not a swap-in.
+- [ ] **Prototype Zipformer Transducer as a VI ASR alternative** —
+      Model candidate: `sherpa-onnx-zipformer-vi-30M-int8-2026-02-09`.
+      Trained on 6,000+ hours of Vietnamese speech, transducer-based (no
+      autoregressive decode loop), and 30M params (int8 quantized). Evaluate
+      WER on VIVOS test set and run latency benchmarks in `experiments/02_asr.ipynb`.
 - [ ] Bookmark Qwen3-ASR-0.6B (Apache-2.0, 52 languages incl. one model
       for EN/ZH/KO+VI) for later — too large for the current budget now
       (~8x PhoWhisper-base), but worth rechecking if a smaller
       distillation ships.
+
 
 ## TTS stage — all 4 languages real, Rust port done (2026-07-17)
 The device is bidirectional, so it must speak all four target languages
@@ -180,6 +186,9 @@ front-end — Piper has no Korean voice).
 - [ ] ZH greeting round-trip was slightly garbled ("你好吗" → "一號嗎")
       while the industrial sentence was clean — recheck ZH voice quality
       on more sentences before trusting it for the demo.
+- [ ] **Prototype license-clean and voice-cloning alternatives for Vietnamese TTS**:
+      - **Viet-TTS** (`dangvansam/viet-tts`): Download ONNX model weights (`speech_tokenizer.onnx`, `speech_embedding.onnx`) and evaluate them to bypass the `espeak-ng` GPL-3.0 phonemizer dependency.
+      - **VieNeu-TTS** (`pnnbao97/VieNeu-TTS`): Evaluate offline CPU-optimized voice cloning support using 3-8s of reference audio to match the speaker's voice.
 
 ## Denoise + VAD stages — implemented, follow-ups
 - [x] Denoise: `nnnoiseless` crate (pure Rust RNNoise reimplementation,
