@@ -45,12 +45,22 @@ pip install -r experiments/requirements.txt
 ```
 
 ### 2. Download and Initialize Models
-Run the setup script to download pre-trained VAD/ASR/TTS models directly from the Hugging Face Hub and automatically export/quantize the translation model components:
+You can set up the required models in one of two ways:
 
+**Option A: Automated Setup (Recommended)**
+Run the setup script to automatically download VAD/ASR/TTS models from Hugging Face Hub and export/quantize the translation model components locally:
 ```bash
 # Download and initialize models (includes automatic INT8 quantization)
 scripts/setup_models.sh
 ```
+
+**Option B: Direct Archive Download**
+Alternatively, you can download the pre-packaged and optimized models bundle directly from our [GitHub Release (v2)](https://github.com/MinLee0210/OneVoice_2026/releases/tag/models-v2):
+1. Download `onevoice_models_v2.tar.gz` from the release assets.
+2. Extract the archive in the repository root directory:
+   ```bash
+   tar -xzf onevoice_models_v2.tar.gz
+   ```
 
 ### 3. Run the End-to-End Pipeline
 Run the mock pipeline against the default evaluation WAV files:
