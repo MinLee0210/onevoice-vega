@@ -94,6 +94,36 @@ comfortable with headroom.
    re-run compile/profile to confirm QNN context binaries (not `.tflite`).
 5. Keep int8 (not int4/fp8) — see `scripts/qaihub/README.md` precision notes.
 
+## 5. Compiled + profiled on QCS6490 (validated 2026-08)
+
+Ran the actual compile/profile path on the target device (`Dragonwing RB3 Gen 2
+Vision Kit`). Two things had to be corrected first:
+
+- **The bundled ONNX is already INT8** (optimum dynamic quant) — the QAIRT/QNN
+  converter rejects it (`exit code 255`) on both `qnn_dlc` and
+  `precompiled_qnn_onnx`. The working path is **FP32 source → server-side
+  full-INT8** (`--quantize_full_type int8 --quantize_io`), i.e. exactly the
+  `qualcomm-ai-hub-community` recipe. `scripts/qaihub/benchmark_qnn.py` does this.
+- **qai-hub reports profile time in microseconds**, not ms (SDK divides by
+  1000 for display). `profile_summary` now converts; the 1000× bug is fixed.
+
+Measured so far (full-INT8 QNN context binary, QCS6490):
+
+| Model (FP32 source) | Inference | Peak mem |
+|---|---|---|
+| PhoWhisper-base encoder (VI) | **230.4 ms** | 17.9 MB |
+| whisper-base encoder | **63.0 ms** | 17.9 MB |
+
+The 3.7× gap between the two same-architecture encoders is an **export
+artifact** (huuquyet's PhoWhisper-base FP32 export converts to a slower QNN
+graph than onnx-community's whisper-base) — worth using `onnx-community`'s
+export or re-exporting PhoWhisper cleanly before trusting the VI NPU number.
+The QCS6490 NPU is not automatically faster than the ~226 ms CPU encoder here;
+the win is architecture/export dependent, so benchmark the exact artifact.
+
+A per-model × per-device latency matrix is produced by
+`scripts/qaihub/benchmark_qnn.py` (CSV at `/tmp/onevoice_qnn_latency.csv`).
+
 ## Sources (firecrawl)
 
 - HF `qualcomm-ai-hub-community/whisper-{base,small}-multilingual-qcs6490-qnn-int8`

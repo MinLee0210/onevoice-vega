@@ -1,0 +1,58 @@
+# Model card metadata (YAML front-matter) for LakoreAI/onevoice-vega.
+# Spec: https://huggingface.co/docs/hub/model-cards#model-card-metadata
+# Kept in sync with the front-matter of docs/hf_model_card.md.
+license: other
+license_name: onevoice-vega-mixed
+license_link: https://huggingface.co/LakoreAI/onevoice-vega#license-note
+language:
+  - vi
+  - en
+  - zh
+  - ko
+pipeline_tag: audio-to-audio
+library_name: onnxruntime
+tags:
+  - onnx
+  - speech-translation
+  - automatic-speech-recognition
+  - text-to-speech
+  - translation
+  - vietnamese
+  - edge
+  - qualcomm
+  - dragonwing
+  - qcs6490
+  - cascaded
+  - industrial
+  - noise-robust
+base_model:
+  - huuquyet/PhoWhisper-base
+  - onnx-community/whisper-small
+  - Helsinki-NLP/opus-mt-vi-en
+  - Helsinki-NLP/opus-mt-en-vi
+  - rhasspy/piper-voices
+  - facebook/mms-tts-kor
+  - onnx-community/silero-vad
+model-index:
+  - name: OneVoice-Vega
+    results:
+      - task:
+          type: automatic-speech-recognition
+          name: Vietnamese ASR (PhoWhisper-base)
+        dataset:
+          name: VIVOS
+          type: vivos
+        metrics:
+          - type: wer
+            value: 2.2
+            name: WER (clean speech)
+      - task:
+          type: translation
+          name: Vietnamese-to-English industrial glossary enforcement
+        dataset:
+          name: OneVoice industrial glossary carrier set
+          type: onevoice-glossary
+        metrics:
+          - type: accuracy
+            value: 100.0
+            name: glossary term accuracy

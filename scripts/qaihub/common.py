@@ -30,10 +30,12 @@ DEVICE_NAME = "Dragonwing RB3 Gen 2 Vision Kit"
 # thing this HTP generation accepts: float graphs are rejected and W8A16
 # fails context-binary conversion (exit code 14). `--quantize_io` quantizes
 # the I/O too; `--truncate_64bit_io` handles the int64 token-id/mask inputs.
-# Proven recipe: qualcomm-ai-hub-community's QCS6490 Whisper builds (see
+# `--target_runtime precompiled_qnn_onnx` is the QNN context binary in this
+# SDK (0.56.0) — newer qai-hub renames it `qnn_context_binary`. Proven recipe:
+# qualcomm-ai-hub-community's QCS6490 Whisper builds (see
 # docs/decisions/pipeline-performance-research-2026-08.md).
 COMPILE_OPTIONS = (
-    "--target_runtime qnn_context_binary "
+    "--target_runtime precompiled_qnn_onnx "
     "--quantize_full_type int8 --quantize_io --truncate_64bit_io"
 )
 
@@ -243,15 +245,20 @@ def profile_summary(job: qai_hub.InferenceJob) -> dict:
     """Extract the edge-AI metrics from a profiled inference job.
 
     ``download_profile()`` returns ``{"execution_summary": {...},
-    "execution_detail": [...]}``; the numbers we care about live in the
-    ``execution_summary`` sub-dict, not the top level.
+    "execution_detail": [...]}``. qai-hub reports **time in microseconds**
+    (see the SDK's own ``/ 1000`` display conversion); converted to ms here.
+    ``peak_memory`` is bytes.
     """
     profile = job.download_profile() or {}
     summary = profile.get("execution_summary", {}) or {}
+
+    def us_to_ms(v: object) -> float | None:
+        return v / 1000.0 if isinstance(v, (int, float)) else None
+
     return {
-        "inference_time_ms": summary.get("estimated_inference_time"),
+        "inference_time_ms": us_to_ms(summary.get("estimated_inference_time")),
         "inference_peak_memory": summary.get("estimated_inference_peak_memory"),
-        "warm_load_time_ms": summary.get("warm_load_time"),
-        "compile_time_ms": summary.get("compile_time"),
+        "warm_load_time_ms": us_to_ms(summary.get("warm_load_time")),
+        "compile_time_ms": us_to_ms(summary.get("compile_time")),
         "inference_memory_peak_range": summary.get("inference_memory_peak_range"),
     }
