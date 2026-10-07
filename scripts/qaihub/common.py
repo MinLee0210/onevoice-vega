@@ -26,10 +26,16 @@ import qai_hub
 # The QCS6490 on Qualcomm AI Hub.
 DEVICE_NAME = "Dragonwing RB3 Gen 2 Vision Kit"
 
-# QNN requires 64-bit integer I/O to be truncated to 32-bit (token ids,
-# attention masks, Silero's `sr`). Token ids are < 2^31 and masks are
-# 0/1, so this is always safe for this pipeline.
-COMPILE_OPTIONS = "--truncate_64bit_io"
+# Compile options for the QCS6490 (Hexagon v68 HTP). Full INT8 is the only
+# thing this HTP generation accepts: float graphs are rejected and W8A16
+# fails context-binary conversion (exit code 14). `--quantize_io` quantizes
+# the I/O too; `--truncate_64bit_io` handles the int64 token-id/mask inputs.
+# Proven recipe: qualcomm-ai-hub-community's QCS6490 Whisper builds (see
+# docs/decisions/pipeline-performance-research-2026-08.md).
+COMPILE_OPTIONS = (
+    "--target_runtime qnn_context_binary "
+    "--quantize_full_type int8 --quantize_io --truncate_64bit_io"
+)
 
 # Default values for dynamic ONNX dims we can't infer from the graph.
 # Per-model overrides (see MODELS below) win over these.

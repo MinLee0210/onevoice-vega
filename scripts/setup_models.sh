@@ -220,8 +220,8 @@ PYEOF
 }
 
 export_mt() {
-    echo "=== mt/vi-en (via notebook -- needs Jupyter + the audio-lab kernel) ==="
-    "$REPO_ROOT/scripts/run_notebook.sh" 03_mt
+    echo "=== mt/en-vi (via scripts/edge/export_en_vi_mt.py -- needs the full audio-lab env) ==="
+    "$PYTHON" "$REPO_ROOT/scripts/edge/export_en_vi_mt.py"
 }
 
 rebuild() {

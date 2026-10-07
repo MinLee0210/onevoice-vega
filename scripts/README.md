@@ -31,8 +31,9 @@ ONEVOICE_MODELS_URL=<url> scripts/setup_models.sh   # non-default bundle host
 the full `audio-lab` env (`huggingface_hub` for vad/asr; plus
 torch/transformers/uroman for tts/ko's ONNX export; auto-installs
 `piper-tts` if needed to source tts/espeak-ng-data, the runtime phoneme
-data the vi/en/zh Rust synthesis path needs; plus jupyter for the
-mt/vi-en export). This is how the bundle itself is produced.
+data the vi/en/zh Rust synthesis path needs; plus torch/optimum/
+sentencepiece/tokenizers for the mt export via `scripts/edge/`). This is
+how the bundle itself is produced.
 
 ```sh
 scripts/setup_models.sh rebuild             # all stages from source
@@ -72,18 +73,14 @@ ONEVOICE_LOG=warn scripts/run_pipeline.sh             # quieter logs
 ONEVOICE_LOG=debug scripts/run_pipeline.sh            # verbose (incl. ort internals)
 ```
 
-## `run_notebook.sh` — headless `experiments/*.ipynb` execution
+## `scripts/edge/` — model export + quantization
 
-Executes in place via the `audio-lab` Jupyter kernel (see
-`experiments/README.md` -> Setup) and fails loudly if any cell errors.
+Offline (local) ONNX export and quantization, run under the `audio-lab`
+env. The Qualcomm AI Hub *cloud* equivalents live in `scripts/qaihub/`.
 
 ```sh
-scripts/run_notebook.sh                    # all notebooks, in order
-scripts/run_notebook.sh 02_asr             # just one (.ipynb optional)
-scripts/run_notebook.sh 01_denoise_vad 03_mt  # a specific few, in order
-
-ONEVOICE_NB_TIMEOUT=2400 scripts/run_notebook.sh 02_asr   # longer timeout
-ONEVOICE_NB_KERNEL=my-other-env scripts/run_notebook.sh   # different kernel
+python scripts/edge/export_en_vi_mt.py   # Helsinki-NLP/opus-mt-en-vi -> models/mt/en-vi
+python scripts/edge/quantize_mt.py       # INT8 quantize models/mt/{en-vi,vi-en}
 ```
 
 ## Expected as the project reaches Phase 3 (prototype build)

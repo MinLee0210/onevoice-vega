@@ -177,15 +177,14 @@ Qualcomm AI Hub (pre-optimized model exports) → AI Hub Workbench
 Raspberry-Pi-HAT compatible — use for mic array (ReSpeaker HAT) and PTT
 button/LED prototyping.
 
-**Whisper specifically does not follow this path today.** AI Hub's
-quantized Whisper for QCS6490 needs AIMET-ONNX, which has no aarch64
-Linux wheel — confirmed via Qualcomm's own `ai-hub-models` issue #281,
-closed as not planned, not just an unconfirmed rumor. Options: re-check
-AI Hub Workbench closer to Phase 3 (fast-moving tooling), or take a
-generic pre-quantized ONNX Whisper (already validated in
-`experiments/02_asr.ipynb`) and try the QNN execution provider directly
-against it, bypassing AI Hub's quantization step entirely. Full detail:
-docs/decisions/qcs6490-whisper-deployment-risk.md.
+**Whisper does follow this path now (resolved 2026-08).** The old blocker
+(AIMET-ONNX, no aarch64 wheel, `ai-hub-models` #281) is moot:
+`qualcomm-ai-hub-community` publishes pre-built full-INT8 QNN context
+binaries for whisper-base/small on QCS6490, and the server-side recipe
+(`--target_runtime qnn_context_binary --quantize_full_type int8
+--quantize_io --truncate_64bit_io`) also works for any HF Whisper
+fine-tune including `vinai/PhoWhisper-small`. See
+docs/decisions/pipeline-performance-research-2026-08.md.
 
 ## Contest/business context
 - Co-hosted with Qualcomm; part of Qualcomm's broader Vietnam AI R&D push
@@ -221,14 +220,21 @@ Phase 5 (Nov 2026)             → finale demo, HCMC
   needs benchmarking on real device.
 - PhoWhisper accuracy post-quantization — partially validated: pre-made
   int8 dynamic quantization (CPU) shows no measurable WER loss vs. fp32
-  on a small VIVOS sample. Still not validated: W8A16 on the actual
-  Hexagon NPU via AI Hub Workbench — that whole deployment path is
-  currently broken, not just unproven, see below.
-- **QCS6490 Whisper/AI Hub deployment is broken today, not just
-  unproven** — AI Hub's quantized Whisper needs AIMET-ONNX, which has
-  no aarch64 Linux wheel (Qualcomm's own `ai-hub-models` issue #281,
-  closed as not planned). Needs a real plan before Phase 3 hardware
-  bring-up. See docs/decisions/qcs6490-whisper-deployment-risk.md.
+  on a small VIVOS sample. Still not validated: full-INT8 on the actual
+  Hexagon NPU (W8A16 fails on this HTP — see the RESOLVED note below);
+  blind calibration-free INT8 trades some accuracy, so re-validate WER
+  on domain before production.
+- **QCS6490 Whisper/AI Hub deployment — RESOLVED (2026-08).** The old
+  blocker (AI Hub's quantized Whisper needs AIMET-ONNX, no aarch64 wheel,
+  `ai-hub-models` #281) is moot: `qualcomm-ai-hub-community` publishes
+  pre-built full-INT8 QNN context binaries for whisper-base/small on
+  QCS6490, with a server-side recipe
+  (`--target_runtime qnn_context_binary --quantize_full_type int8
+  --quantize_io`) that also works for `vinai/PhoWhisper-small`. Measured:
+  whisper-base encoder 49.5 ms / decoder 12.1 ms-per-token on device.
+  Still open: actually loading the context binary via `ort`'s `qnn`
+  feature on real hardware (week-1 Phase 3 smoke test). See
+  docs/decisions/pipeline-performance-research-2026-08.md.
 - **Piper's Vietnamese TTS has a license trap and an unresolved GPL
   question** (phonemizer dependency) — see the model stack license trap
   note above and docs/decisions/piper-vi-voice-license-trap.md. Now
