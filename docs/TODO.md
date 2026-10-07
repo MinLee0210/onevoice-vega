@@ -26,6 +26,17 @@ no new models needed), the rest are Phase 3+.
       `asr/en-zh-ko` uses whisper-small (12 layers / 12 heads) but `asr.rs`
       hardcodes PhoWhisper-base's 6/8.
 
+### From the 2026-10 deep research (scoring is BLEU+COMET, TTS MOS, RTF, latency; see docs/decisions/deep-research-2026-10.md)
+Organisers' dates: prototype submission Sep 2026, field testing Oct 2026, finale Nov 2026.
+- [ ] COMET + chrF + BLEU eval harness (Python, offline) and a small held-out
+      vi↔en/zh/ko set — COMET is scored by the organisers and is unmeasured here.
+- [ ] Replace Korean TTS (MMS-TTS is CC-BY-NC 4.0, see THIRD_PARTY_LICENSES.md) and
+      run a native-speaker MOS check on all four voices.
+- [ ] Distil a teacher MT (HY-MT1.5 / TranslateGemma, check licences) into Opus-MT
+      or a LoRA using a hard-example glossary set.
+- [ ] Airplane-mode audit: no network use anywhere (model downloads, ort, espeak data).
+- [ ] Noise eval needs a no-denoise arm (denoising can hurt ASR, arXiv 2512.17562).
+
 ### Then (Phase 3+, needs hardware / models / design)
 - [ ] **Vega Air carrier** — broadcast-tuned TTS (slower rate, higher
       articulation for outdoor SPL), sequential VI→EN→ZH→KO broadcast loop,
@@ -42,6 +53,19 @@ no new models needed), the rest are Phase 3+.
       — the device structurally can't translate those pairs yet.
 - [ ] Prototype VietASR (13M CTC, no autoregressive loop) as VI latency fix.
 - [ ] QNN/Hexagon smoke test (week 1 of Phase 3 hardware bring-up).
+- [ ] **Test edge devices on Qualcomm AI Hub** — compile + profile every pipeline
+      stage (VAD, ASR encoder/decoder, MT, TTS) on the hosted devices, starting with
+      `Dragonwing RB3 Gen 2 Vision Kit` (QCS6490, our target; Rubik Pi 3 class), then
+      the other Dragonwing/Snapdragon parts as fallbacks and comparison points
+      (`Dragonwing Q-6690 MTP`, `IQ-9075 EVK`, `QCS8550 (Proxy)`, Snapdragon X). Produce a
+      model × device matrix (inference ms, peak memory, context-binary size, compile
+      status) and check it against `configs/latency-budget.toml`. Use calibration audio
+      with noisy Vietnamese for full-INT8 (W8A16 does not compile on this HTP). Work in
+      tooling already exists in `scripts/qaihub/benchmark_devices.py` and
+      `benchmark_qnn.py`; run it and record results in `docs/reports/`. They feed the
+      field-test device choice and the
+      "Dragonwing-native" pitch. A hosted AI Hub run is not a substitute for running on the
+      real Rubik Pi 3, so keep the on-device smoke test above.
 - [ ] Business model answer (hardware margin / enterprise licensing / paid
       vocab packs) — still open, 25% of judging.
 

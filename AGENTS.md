@@ -191,7 +191,13 @@ docs/decisions/pipeline-performance-research-2026-08.md.
 - Co-hosted with Qualcomm; part of Qualcomm's broader Vietnam AI R&D push
   (Hanoi/HCMC AI center opened June 2025, VinAI/MovianAI acquisition
   April 2025 — PhoWhisper/PhoMT lineage is now Qualcomm-owned talent).
-- Judging (Phase 2 rubric): AI Approach & Technical Design 35% / Hardware
+- Judging from the prototype phase on (public Luma page, checked 2026-10-07):
+  Technical Performance 50% (BLEU + COMET on a hidden benchmark, MOS for TTS
+  naturalness, RTF < 1.0, end-of-speech → start-of-synthesis latency with > 2.0s
+  penalised) / Innovation 25% / Business Viability 25%. Any internet
+  dependency during testing = disqualification. See
+  docs/decisions/deep-research-2026-10.md.
+- Judging (Phase 2 rubric, superseded): AI Approach & Technical Design 35% / Hardware
   & Device 25% / Business Solution 15% / Problem & Impact 15% / Team &
   Execution 10%.
 - Likely goal from Qualcomm's side: Dragonwing/QCS design wins, AI Hub
