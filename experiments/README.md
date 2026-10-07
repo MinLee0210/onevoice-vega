@@ -3,7 +3,7 @@
 Python side: model evaluation, fine-tuning, quantization, ONNX export.
 Nothing here runs on-device — the output artifact of this directory is
 `.onnx` / QNN context binaries dropped into `models/`, which `src/`
-consumes. Keep the real-time loop out of Python entirely (see CLAUDE.md
+consumes. Keep the real-time loop out of Python entirely (see AGENTS.md
 → Tooling / language split).
 
 Flat directory of `.ipynb` files, numbered by pipeline stage:

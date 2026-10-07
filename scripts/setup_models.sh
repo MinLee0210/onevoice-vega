@@ -42,8 +42,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 DEFAULT_MODELS_REPO="MinLee0210/OneVoice_2026"
-DEFAULT_MODELS_TAG="models-v1"
-BUNDLE_NAME="onevoice-models.tar.gz"
+DEFAULT_MODELS_TAG="models-v2"
+BUNDLE_NAME="onevoice_models_v2.tar.gz"
 PYTHON="${ONEVOICE_HF_PYTHON:-python3}"
 
 # ---------------------------------------------------------------------------

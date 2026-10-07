@@ -61,6 +61,8 @@ case "$PROFILE" in
         ;;
 esac
 
-echo "running: $BIN $INPUT_WAV $OUTPUT_WAV ${EXTRA_ARGS[*]}"
+# bash 3.2 (macOS default) errors on `${EXTRA_ARGS[*]}` under `set -u` when
+# the array is empty; the `+` guard expands to nothing in that case.
+echo "running: $BIN $INPUT_WAV $OUTPUT_WAV ${EXTRA_ARGS[*]+"${EXTRA_ARGS[*]}"}"
 echo
-exec "$BIN" "$INPUT_WAV" "$OUTPUT_WAV" "${EXTRA_ARGS[@]}"
+exec "$BIN" "$INPUT_WAV" "$OUTPUT_WAV" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}

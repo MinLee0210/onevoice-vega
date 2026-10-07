@@ -1,5 +1,5 @@
 //! MT encoder/decoder inference via `ort` (ONNX Runtime), greedy
-//! (beam=1) decode to hit the latency target (see CLAUDE.md -> Latency
+//! (beam=1) decode to hit the latency target (see AGENTS.md -> Latency
 //! target). Implemented for the vi-en pair against the Opus-MT export in
 //! experiments/03_mt.ipynb — see that notebook (sections 2-6) for how
 //! the ONNX export, the tokenizer.json conversion, and the merged-decoder
@@ -44,17 +44,17 @@
 //! summary). Known limitation: biased output is grammatically rougher
 //! than unbiased ("forklift approaching sector three." drops "The"/"is")
 //! — acceptable for a safety-critical term to be present and
-//! intelligible, not yet polished. LoRA fine-tuning (CLAUDE.md's
+//! intelligible, not yet polished. LoRA fine-tuning (AGENTS.md's
 //! original plan) would fix this more thoroughly but is a much bigger
 //! task; this is the cheap-to-ship stopgap.
 //!
 //! Runs on CPU here; the QNN execution provider for the Hexagon NPU
-//! (CLAUDE.md -> Compute split) is future work — `ort` supports it via
+//! (AGENTS.md -> Compute split) is future work — `ort` supports it via
 //! the `qnn` Cargo feature, not yet enabled.
 
 use std::path::PathBuf;
 
-use ndarray::{ArrayD, IxDyn};
+use ndarray::ArrayD;
 use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
@@ -62,10 +62,8 @@ use tokenizers::Tokenizer;
 use crate::audio::{Translation, Utterance};
 use crate::error::OneVoiceError;
 use crate::stages::glossary::Glossary;
+use crate::stages::seq2seq::{self, DecoderSpec, LayerCache};
 
-const NUM_LAYERS: usize = 6;
-const NUM_HEADS: usize = 8;
-const HEAD_DIM: usize = 64;
 const MAX_NEW_TOKENS: usize = 64;
 /// Logit bias added to a glossary target sequence's next expected token.
 /// Validated in experiments/03_mt.ipynb section 7b: the real logit gap
@@ -75,35 +73,13 @@ const MAX_NEW_TOKENS: usize = 64;
 /// starts winning over strongly-preferred alternatives elsewhere.
 const GLOSSARY_BIAS: f32 = 12.0;
 
-/// Per-layer self-attention (decoder) and cross-attention (encoder) KV
-/// cache, kept as dynamic-rank arrays so a zero-length first step
-/// (`[1, NUM_HEADS, 0, HEAD_DIM]`) is just a normal empty array rather
-/// than a special case.
-struct LayerCache {
-    decoder_key: ArrayD<f32>,
-    decoder_value: ArrayD<f32>,
-    encoder_key: ArrayD<f32>,
-    encoder_value: ArrayD<f32>,
-}
-
-impl LayerCache {
-    fn empty() -> Self {
-        let empty = || ArrayD::<f32>::zeros(IxDyn(&[1, NUM_HEADS, 0, HEAD_DIM]));
-        Self {
-            decoder_key: empty(),
-            decoder_value: empty(),
-            encoder_key: empty(),
-            encoder_value: empty(),
-        }
-    }
-}
-
 pub struct MtEngine {
     tokenizer: Tokenizer,
     encoder: Session,
     decoder: Session,
     pad_token_id: i64,
     eos_token_id: i64,
+    spec: DecoderSpec,
 }
 
 impl MtEngine {
@@ -142,12 +118,15 @@ impl MtEngine {
             .ok_or_else(|| OneVoiceError::Mt("vocab has no </s> token".to_string()))?
             as i64;
 
+        let spec = DecoderSpec::from_session(&decoder).map_err(OneVoiceError::Mt)?;
+
         Ok(Self {
             tokenizer,
             encoder,
             decoder,
             pad_token_id,
             eos_token_id,
+            spec,
         })
     }
 
@@ -260,7 +239,9 @@ impl MtEngine {
         encoder_seq_len: usize,
         bias_seqs: &[Vec<i64>],
     ) -> Result<Vec<i64>, OneVoiceError> {
-        let mut cache: Vec<LayerCache> = (0..NUM_LAYERS).map(|_| LayerCache::empty()).collect();
+        let mut cache: Vec<LayerCache> = (0..self.spec.num_layers)
+            .map(|_| LayerCache::empty(&self.spec))
+            .collect();
         let mut next_id = self.pad_token_id;
         let mut generated: Vec<i64> = Vec::new();
         // Index of the next expected token in each bias_seqs entry --
@@ -306,7 +287,7 @@ impl MtEngine {
                 &biased_logits
             };
 
-            next_id = argmax_excluding(step_logits, self.pad_token_id as usize) as i64;
+            next_id = seq2seq::argmax_excluding(step_logits, self.pad_token_id as usize) as i64;
             if next_id == self.eos_token_id {
                 break;
             }
@@ -333,21 +314,8 @@ impl MtEngine {
                 }
             }
 
-            for (i, layer) in cache.iter_mut().enumerate() {
-                layer.decoder_key = extract_owned(&outputs, &format!("present.{i}.decoder.key"))?;
-                layer.decoder_value =
-                    extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
-            }
-            if step == 0 {
-                // Cross-attention KV is only correctly populated on the
-                // first (no-cache) call -- see the module doc comment.
-                for (i, layer) in cache.iter_mut().enumerate() {
-                    layer.encoder_key =
-                        extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
-                    layer.encoder_value =
-                        extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
-                }
-            }
+            seq2seq::extract_present_caches(&outputs, &mut cache, step == 0)
+                .map_err(OneVoiceError::Mt)?;
         }
 
         Ok(generated)
@@ -363,7 +331,7 @@ impl MtEngine {
         encoder_seq_len: usize,
         cache: &[LayerCache],
     ) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
-        let mut feeds = Vec::with_capacity(4 + NUM_LAYERS * 4);
+        let mut feeds = Vec::with_capacity(4 + self.spec.num_layers * 4);
 
         feeds.push((
             "input_ids".to_string(),
@@ -405,38 +373,14 @@ impl MtEngine {
     }
 }
 
+/// Thin wrapper mapping the shared `seq2seq::tensor_input` string error
+/// onto this stage's `OneVoiceError::Mt` variant.
 fn tensor_input<'a, T, D>(data: D) -> Result<SessionInputValue<'a>, OneVoiceError>
 where
     T: ort::value::PrimitiveTensorElementType + std::fmt::Debug + Clone + 'static,
     D: ort::value::OwnedTensorArrayData<T>,
 {
-    Tensor::from_array(data)
-        .map(SessionInputValue::from)
-        .map_err(|source| OneVoiceError::Mt(format!("failed to build input tensor: {source}")))
-}
-
-fn extract_owned(
-    outputs: &ort::session::SessionOutputs,
-    name: &str,
-) -> Result<ArrayD<f32>, OneVoiceError> {
-    outputs[name]
-        .try_extract_array::<f32>()
-        .map_err(|source| {
-            OneVoiceError::Mt(format!("failed to read decoder output {name}: {source}"))
-        })
-        .map(|view| view.to_owned())
-}
-
-/// argmax over `logits`, treating `excluded` as if its score were -inf
-/// (matches generation_config's `bad_words_ids` masking out the pad token).
-fn argmax_excluding(logits: &[f32], excluded: usize) -> usize {
-    logits
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != excluded)
-        .max_by(|(_, a), (_, b)| a.total_cmp(b))
-        .map(|(i, _)| i)
-        .expect("logits is never empty")
+    seq2seq::tensor_input(data).map_err(OneVoiceError::Mt)
 }
 
 #[cfg(test)]

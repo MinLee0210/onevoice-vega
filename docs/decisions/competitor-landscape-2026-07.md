@@ -29,7 +29,7 @@ the single most important finding here for the business pitch.
 | **Waverly Labs Pilot** | Consumer (earpiece) | Was marketed as offline-capable | N/A — discontinued | Travel | **Cautionary tale**: cloud service shut down April 2024, bricking all existing units. Direct evidence for why local-only architecture matters for a device with a multi-year field lifespan. |
 | **Muama Enence** | Consumer/budget | **No**, despite "offline" marketing — requires app + WiFi/4G | 68+ claimed | Travel/budget | Market-bottom device (2.9/5 Amazon rating). Sets a low quality bar, not a real technical comparator. |
 | **MindForge** | Construction-specific | N/A (text/app, not speech) | EN↔ES only | Construction jobsite alerts | Software-only (phone app), not a device. Text-based auto-translate for safety alerts/orientations, not real-time speech. Narrow (2-language) but shows construction-specific demand is real. |
-| **Vbee (VN)** | TTS platform, not a translator | Unconfirmed | 50+ (TTS only) | Vietnamese enterprise TTS/voice | CLAUDE.md cites this as "the existing precedent — Vietnamese startup building offline voice solutions on Qualcomm edge platforms," but this research could **not independently verify** the Qualcomm hardware/offline angle — everything findable is about their cloud TTS API/SaaS product, not an edge device. Flagging as unconfirmed, not contradicted; CLAUDE.md may have information (a conversation, a deck) this web search didn't surface. Worth a direct check before repeating the claim in Phase 2/3 materials. |
+| **Vbee (VN)** | TTS platform, not a translator | Unconfirmed | 50+ (TTS only) | Vietnamese enterprise TTS/voice | AGENTS.md cites this as "the existing precedent — Vietnamese startup building offline voice solutions on Qualcomm edge platforms," but this research could **not independently verify** the Qualcomm hardware/offline angle — everything findable is about their cloud TTS API/SaaS product, not an edge device. Flagging as unconfirmed, not contradicted; AGENTS.md may have information (a conversation, a deck) this web search didn't surface. Worth a direct check before repeating the claim in Phase 2/3 materials. |
 
 ## What nobody offers (the gap)
 
@@ -37,7 +37,7 @@ Across every product researched:
 - **No genuinely-offline industrial PTT translator was found.** The two
   real industrial competitors (Weavix, Relay) are both cloud-first —
   when the network drops, they degrade to plain voice radio, losing
-  translation entirely. That's precisely the failure mode CLAUDE.md's
+  translation entirely. That's precisely the failure mode AGENTS.md's
   "zero connectivity required, airplane-mode demo" performance target
   is designed around.
 - **No competitor prioritizes Vietnamese.** Global players (Vasco,
@@ -52,7 +52,7 @@ Across every product researched:
   and Weavix both have emergency/safety *messaging* features (SOS
   buttons, panic alerts, evacuation integration) but nothing found
   enforces correct translation of specific safety-critical terminology
-  the way CLAUDE.md's glossary engine + constrained decoding aims to.
+  the way AGENTS.md's glossary engine + constrained decoding aims to.
 
 ## Detailed findings, by product
 
@@ -61,7 +61,7 @@ Across every product researched:
 [weavix.com](https://weavix.com/walt-smart-radio/) — purpose-built
 handheld radio for manufacturing/logistics/construction. Hardware: Class
 1 Division 2 intrinsically-safe rating (relevant for hazardous/explosive
-atmospheres — chemical plants, etc.; notably higher bar than CLAUDE.md's
+atmospheres — chemical plants, etc.; notably higher bar than AGENTS.md's
 current IP54+ target), Gorilla Glass 3 touchscreen, drop-tested,
 water-resistant, dustproof, 105dB external speaker, glove-friendly
 buttons, dedicated SOS button, front/rear cameras. AI translation
@@ -98,13 +98,13 @@ connectivity gaps, not eliminating the dependency.
 
 [store.iflytek.com](https://store.iflytek.com/products/iflytek-smart-translator) —
 consumer/travel device, but the audio front-end design is the most
-directly comparable thing found to what CLAUDE.md specs for OneVoice: a
+directly comparable thing found to what AGENTS.md specs for OneVoice: a
 **U-shaped 4-microphone array** with AI noise-cancellation, explicitly
 marketed for noisy environments (airports, restaurants, streets), 0.5s
 response time. 18 of 60 supported languages work genuinely offline
 (major ones: EN, AR, ZH, JA, KO, RU, FR, DE, ES — Vietnamese not
 confirmed either way in what was found). **Worth a direct product
-comparison**: iFlytek uses 4 mics vs. CLAUDE.md's planned 2-mic array —
+comparison**: iFlytek uses 4 mics vs. AGENTS.md's planned 2-mic array —
 if their marketing claims about noisy-environment performance hold up,
 that's a data point suggesting 2 mics might be an optimistic starting
 point, though 4 vs. 2 could just as easily be their cost/BOM choice
@@ -122,7 +122,7 @@ Their own accuracy claim (96%, from the WMT2022 text-translation
 benchmark) is materially higher than real-world speech performance
 reported by reviewers: 92-95% in quiet indoor settings, dropping to
 78-84% in 65+dB street noise, and 69-77% for accented/rapid speech.
-**Implication for OneVoice's own targets**: CLAUDE.md's "≤15% WER at
+**Implication for OneVoice's own targets**: AGENTS.md's "≤15% WER at
 75-85dB factory noise" target should be understood as harder than it
 might look next to a vendor's headline accuracy number — Vasco's own
 data shows a ~15-20 point real-world accuracy drop in comparable noise
@@ -138,7 +138,7 @@ model storage at all (explicitly stated in their own FAQ). 92+ languages,
 noise-cancelling mics, camera-based text translation. One specific
 design parallel worth noting: **Pocketalk caps spoken input at 30
 seconds per translation** — independently arrived at a similar
-utterance-length ceiling to CLAUDE.md's "process complete utterances
+utterance-length ceiling to AGENTS.md's "process complete utterances
 (≤10s)" design choice, for what's presumably a similar reason (latency
 and complexity scale badly with utterance length in a conversational
 device). Business model: bundled eSIM data plan (2-5 years) included in
@@ -154,7 +154,7 @@ sale? paid glossary/vocab-pack updates? enterprise licensing?).
 earbud form factor, genuinely offline via downloadable language packs
 (no subscription). But: only 8 languages work offline (all paired
 through EN or ZH: JA/KO/FR/ES/RU/DE), no Vietnamese, and only 2-3 hours
-of continuous earbud battery life (vs. CLAUDE.md's ≥8h target — a real
+of continuous earbud battery life (vs. AGENTS.md's ≥8h target — a real
 gap this device doesn't solve, likely because earbud form factor caps
 battery volume much more than a handheld/neckband device would).
 Confirms offline speech translation is technically achievable in a
@@ -183,7 +183,7 @@ orientations, English↔Spanish only. Not a technical comparator (no
 speech, no device), but useful market-validation signal:
 industry-specific point solutions for language-barrier safety
 communication already exist and are being sold, at least for the
-largest US minority-language pair (Spanish). Reinforces CLAUDE.md's
+largest US minority-language pair (Spanish). Reinforces AGENTS.md's
 framing that language barriers are a recognized safety issue (also
 found independently: NIOSH estimates language barriers contribute to
 25% of on-the-job construction accidents, and one industry report cites
@@ -200,7 +200,7 @@ site productivity).
    loses translation entirely without a network; OneVoice doesn't.
 2. **Frame the accuracy target honestly against real-world competitor
    numbers, not their marketing numbers** — Vasco's real 65+dB-noise
-   accuracy (78-84%) is a more honest benchmark to compare CLAUDE.md's
+   accuracy (78-84%) is a more honest benchmark to compare AGENTS.md's
    ≤15% WER target against than any vendor's headline claim.
 3. **Vietnamese-first is a genuine, uncontested specialization** — no
    competitor researched treats Vietnamese as a priority language.
@@ -227,7 +227,7 @@ site productivity).
    Phase 2/3 materials repeat it as an established precedent.
 8. **Ruggedness bar**: Weavix's Class 1 Division 2 rating is a
    meaningfully higher (harder, more expensive) certification than
-   CLAUDE.md's current IP54+ target — fine to stay at IP54+ for the
+   AGENTS.md's current IP54+ target — fine to stay at IP54+ for the
    general factory/warehouse/construction target, but worth knowing
    this ceiling exists if OneVoice ever wants to pursue hazardous-
    environment verticals (oil/gas, chemical processing) where Weavix

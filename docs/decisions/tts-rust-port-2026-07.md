@@ -119,7 +119,7 @@ All four languages produce real, round-trip-ASR-verified audio through
 the actual Rust inference path (not just the Python notebook). Full
 pipeline (capture → denoise → VAD → ASR → MT → TTS → playback) measured
 at ~550-600ms button-release → synthesized-audio on a CPU dev machine —
-comfortably under CLAUDE.md's ≤1.2s target, though not yet measured on
+comfortably under AGENTS.md's ≤1.2s target, though not yet measured on
 the Hexagon NPU target hardware. See `docs/TODO.md`'s TTS section for
 the day-to-day summary and `src/stages/tts.rs` module docs for the
 in-code version of this write-up.

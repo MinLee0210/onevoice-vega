@@ -5,21 +5,21 @@
 # only for *rebuilding* the models, see setup_models.sh rebuild).
 #
 # Workflow:
-#   1. scripts/pack_models.sh                 # -> dist/onevoice-models.tar.gz
+#   1. scripts/pack_models.sh                 # -> dist/onevoice_models_v2.tar.gz
 #   2. upload it to a GitHub Release (the script prints the exact
 #      `gh release create` command), or any static host
 #   3. point setup_models.sh at it via ONEVOICE_MODELS_URL, or bake the
 #      release URL into DEFAULT_MODELS_URL there
 #
 # Usage:
-#   scripts/pack_models.sh [output.tar.gz]     # default: dist/onevoice-models.tar.gz
+#   scripts/pack_models.sh [output.tar.gz]     # default: dist/onevoice_models_v2.tar.gz
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-OUT="${1:-dist/onevoice-models.tar.gz}"
+OUT="${1:-dist/onevoice_models_v2.tar.gz}"
 mkdir -p "$(dirname "$OUT")"
 
 # Sanity: refuse to pack an incomplete models/ tree -- catches the
@@ -57,9 +57,9 @@ echo
 echo "created $OUT ($size)"
 echo "sha256: $sha"
 echo
-echo "next -- upload to a GitHub Release (tag 'models-v1' assumed by setup_models.sh):"
-echo "  gh release create models-v1 \"$OUT\" \\"
-echo "    --title 'OneVoice model bundle v1' \\"
+echo "next -- upload to a GitHub Release (tag 'models-v2' assumed by setup_models.sh):"
+echo "  gh release create models-v2 \"$OUT\" \\"
+echo "    --title 'OneVoice model bundle v2' \\"
 echo "    --notes 'Prebuilt ONNX artifacts for all stages (vad/asr/mt/tts, VI+EN+ZH+KO). sha256: $sha'"
 echo
 echo "if you use a different tag/host, point setup_models.sh at it via"

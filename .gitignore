@@ -256,3 +256,5 @@ data/eval/**/*.flac
 .vscode/
 
 tokenizer.json
+
+*.pdf

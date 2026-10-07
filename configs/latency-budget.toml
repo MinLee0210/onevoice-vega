@@ -1,5 +1,5 @@
 # Per-stage latency allocation, milliseconds, against the button-release
-# -> first-audio target. See CLAUDE.md -> Latency target.
+# -> first-audio target. See AGENTS.md -> Latency target.
 
 target_total_ms = 1200
 stretch_total_ms = 800

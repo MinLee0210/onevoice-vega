@@ -1,6 +1,51 @@
 # TODO
 
-## Phase 2 — technical spec submission (due Jul 2026)
+## Plan (2026-08, post-submission) — QUAVIO/Vega two carriers
+
+The Phase 2 submission expanded the project from a single handheld into a
+two-carrier platform: **Vega Hand** (PTT handheld, one-to-one) and
+**Vega Air** (drone-mounted multilingual broadcast, one-to-many). Research on
+both carriers is in
+docs/decisions/vega-air-and-feature-research-2026-08.md. Immediate execution
+order below; the first five are the do-now engineering steps (no hardware /
+no new models needed), the rest are Phase 3+.
+
+### First 5 steps (execute now)
+1. [x] Add CI (GitHub Actions): `cargo fmt --check`, `cargo clippy -- -D warnings`,
+      `cargo test`, `shellcheck` — encode the pre-commit checks so regressions
+      can't merge silently.
+2. [x] Fix `scripts/setup_models.sh` model-version mismatch (`models-v1` tag /
+      `onevoice-models.tar.gz` vs. README's `models-v2` / `onevoice_models_v2.tar.gz`).
+3. [x] VAD empty-utterance early-out in `src/pipeline.rs` — skip ASR/MT/TTS when
+      Silero finds no speech (currently ASR pads silence to 30s and emits garbage).
+4. [x] Extract shared `src/stages/seq2seq.rs` — dedup the identical KV-cache /
+      tensor plumbing duplicated across `asr.rs` and `mt.rs` (LayerCache,
+      tensor_input, extract_owned, argmax, present-state extraction).
+5. [x] `DecoderSpec::from_session` — derive decoder num_layers/num_heads/head_dim
+      from the ONNX graph instead of hardcoding 6/8/64. Fixes a latent bug:
+      `asr/en-zh-ko` uses whisper-small (12 layers / 12 heads) but `asr.rs`
+      hardcodes PhoWhisper-base's 6/8.
+
+### Then (Phase 3+, needs hardware / models / design)
+- [ ] **Vega Air carrier** — broadcast-tuned TTS (slower rate, higher
+      articulation for outdoor SPL), sequential VI→EN→ZH→KO broadcast loop,
+      MAVLink/UART telemetry reader. Acoustic parity bar: ≥120 dB @1 m, ≤300 g
+      (see drone-PA section of the research doc).
+- [ ] **Vega Air two-way stretch** — ego-noise cancellation. Do NOT promise for
+      Phase 3; research says prefer *conditioning* over *subtraction* and add a
+      near-rotor reference mic. Train/eval on DroneAudioSet.
+- [ ] **Hand feature pack (cheap, copyable)** — haptic/vibration feedback
+      (unclaimed by all competitors), SOS trigger (long/triple-press PTT),
+      multi-state LED semantics, high-SPL speaker + EQ, translation-log + USB
+      export, lanyard/belt-clip.
+- [ ] Export the remaining 5 MT directions (en-vi, vi-zh, zh-vi, vi-ko, ko-vi)
+      — the device structurally can't translate those pairs yet.
+- [ ] Prototype VietASR (13M CTC, no autoregressive loop) as VI latency fix.
+- [ ] QNN/Hexagon smoke test (week 1 of Phase 3 hardware bring-up).
+- [ ] Business model answer (hardware margin / enterprise licensing / paid
+      vocab packs) — still open, 25% of judging.
+
+## Phase 2 — technical spec submission (submitted 03/08/2026)
 - [ ] Verify OneVoice IP/equity terms in FAQ (compare to QVIC precedent)
 - [x] Write technical spec draft (docs/proposals/) — done outside this repo
 - [x] Write business viability pitch (docs/proposals/) — done outside this repo
@@ -11,7 +56,7 @@
       degrade to plain voice radio when offline) — "zero connectivity
       required" is a real, differentiated claim, not just a spec.
 - [ ] **Directly verify the Vbee/Qualcomm offline-edge-device claim**
-      (CLAUDE.md → Contest/business context) — this research could not
+      (AGENTS.md → Contest/business context) — this research could not
       independently confirm it; everything findable about Vbee online
       is their cloud TTS SaaS product, not an edge device. Don't repeat
       the claim in Phase 2/3 materials without confirming it first.
@@ -39,7 +84,7 @@
 - [x] **Factory noise evaluation (R10) (2026-07-18)** — implemented evaluation
       script (`scripts/evaluate_noise_robustness.py`) and generated a report
       (`docs/reports/asr_noise_robustness.md`) measuring PhoWhisper WER at 5dB/10dB/15dB SNR.
-- [ ] **QCS6490 Whisper/PhoWhisper deployment risk** — CLAUDE.md assumes
+- [ ] **QCS6490 Whisper/PhoWhisper deployment risk** — AGENTS.md assumes
       "Whisper-Small (AI Hub, pre-quantized)" is a ready path; it isn't,
       as of writing. See
       docs/decisions/qcs6490-whisper-deployment-risk.md — needs a plan
@@ -72,7 +117,7 @@
       real fluency cost on corrected sentences (dropped articles, minor
       grammar roughness) — acceptable for now, not native-speaker
       reviewed. vi-en only; the other 5 pairs have no MT model ported
-      yet. LoRA fine-tune (CLAUDE.md's original plan) is still the
+      yet. LoRA fine-tune (AGENTS.md's original plan) is still the
       better long-term fix for fluency, not started.
 - [ ] Port `MtEngine` to the QNN execution provider once running on
       real Rubik Pi 3 hardware (currently CPU-only)
@@ -103,7 +148,7 @@
       NPU target): for a ~1.7s utterance producing 16 output tokens,
       encoder ≈130-310ms, decoder loop ≈250-405ms — the autoregressive
       **decoder is the bigger cost of the two**, not the fixed-size
-      encoder pass, confirming CLAUDE.md's own "ASR decoder is the
+      encoder pass, confirming AGENTS.md's own "ASR decoder is the
       bottleneck" assumption with real numbers for the first time. Full
       ASR stage ≈420-720ms; MT ≈90-240ms; denoise+VAD+capture <15ms
       combined. Through-MT total ≈530-970ms (real run-to-run variance
@@ -120,7 +165,7 @@
       found in the 2026-07-15 research pass, see
       docs/decisions/pipeline-improvement-research-2026-07.md. No
       autoregressive decode loop at all (CTC, not seq2seq) — directly
-      attacks the latency bottleneck CLAUDE.md calls out. WER not yet
+      attacks the latency bottleneck AGENTS.md calls out. WER not yet
       confirmed vs. PhoWhisper, ONNX export not yet confirmed either —
       needs a real validation pass before trusting it, not a swap-in.
 - [x] **REJECTED: Prototype Zipformer Transducer as a VI ASR alternative** —
@@ -162,7 +207,7 @@ front-end — Piper has no Korean voice).
       real for all 4 languages, not a stub — the pipeline runs end to
       end through actual synthesized audio for the first time (full
       button-release→audio latency ~550-600ms on CPU, well under
-      CLAUDE.md's ≤1.2s). VI/EN/ZH use the `piper-rs` crate (MIT) —
+      AGENTS.md's ≤1.2s). VI/EN/ZH use the `piper-rs` crate (MIT) —
       handles VITS inference + espeak-ng phonemization internally, same
       `ort` version this project already depends on. KO (MMS) has no
       covering crate, so it's hand-rolled: the `uroman` crate (a from-
@@ -224,7 +269,7 @@ front-end — Piper has no Korean voice).
       `torchaudio` has since removed, no compatible older `torchaudio`
       available) — both failures are captured directly in the notebook,
       not hidden.
-- [ ] DeepFilterNet3 as the denoise upgrade path (CLAUDE.md: "better on
+- [ ] DeepFilterNet3 as the denoise upgrade path (AGENTS.md: "better on
       machinery noise") — a legitimate pre-exported ONNX exists
       ([soniqo/DeepFilterNet3-ONNX](https://huggingface.co/soniqo/DeepFilterNet3-ONNX),
       MIT, validated against PyTorch to ~1e-6), found and inspected in
@@ -268,7 +313,7 @@ front-end — Piper has no Korean voice).
       section above for the actual numbers) — this now measures
       performance, not just composition. Now covers the full cycle
       through TTS: button-release → synthesized-audio measured at
-      ~550-600ms, comfortably under CLAUDE.md's ≤1.2s target (and its
+      ~550-600ms, comfortably under AGENTS.md's ≤1.2s target (and its
       0.8s stretch goal). Still CPU-dev-machine-only, not the Hexagon
       NPU target hardware — a real number on real target hardware is
       still an open question.

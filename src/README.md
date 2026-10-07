@@ -1,7 +1,7 @@
 # src
 
 On-device runtime, in Rust. Single crate, one module per pipeline stage
-from CLAUDE.md — not a Cargo workspace. A workspace of many small crates
+from AGENTS.md — not a Cargo workspace. A workspace of many small crates
 was tried first and cut for being more ceremony than the project (still
 pre-prototype, Phase 2 spec) needs; revisit only if compile times or
 real team-parallelism actually demand crate boundaries.
@@ -88,11 +88,11 @@ translation and per-stage timing (including the full button-release ->
 synthesized-audio latency) at INFO level. Input WAV must be mono, 48kHz
 (RNNoise's fixed input rate). Measured on a CPU dev machine (not the
 Hexagon NPU target): ~550-600ms through MT, full pipeline through TTS
-in well under CLAUDE.md's ≤1.2s target.
+in well under AGENTS.md's ≤1.2s target.
 
 Models are loaded from `models/<stage>/` — see `models/README.md` for
 what's there and `scripts/setup_models.sh` for how to (re)populate it.
 `asr` and `mt` need the QNN execution provider (`libQnnHtp.so`)
-available on-device to run on the Hexagon NPU; see CLAUDE.md → Hexagon
+available on-device to run on the Hexagon NPU; see AGENTS.md → Hexagon
 / QNN glossary and → Hardware toolchain. Nothing in this crate has been
 run against QNN yet — only CPU, so far.

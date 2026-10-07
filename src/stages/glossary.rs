@@ -1,6 +1,6 @@
 //! Industrial termbase: VI/EN/ZH/KO parallel glossary (safety commands,
 //! machine names, logistics terms) — the "Industrial glossary engine"
-//! differentiator from CLAUDE.md. This is the lookup table, loaded for
+//! differentiator from AGENTS.md. This is the lookup table, loaded for
 //! real from `data/glossary/termbase.tsv`.
 //!
 //! **Wired into `mt`'s decode** via `find_matches` (below) — see

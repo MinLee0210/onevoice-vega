@@ -1,10 +1,11 @@
 import json
 import shutil
-from pathlib import Path
 from datetime import date
-from optimum.exporters.onnx import main_export
+from pathlib import Path
+
 import sentencepiece as spm
 import sentencepiece.sentencepiece_model_pb2 as spm_pb2
+from optimum.exporters.onnx import main_export
 from tokenizers import Tokenizer, decoders, pre_tokenizers
 from tokenizers.models import Unigram
 from tokenizers.normalizers import Precompiled, Replace, Sequence

@@ -69,7 +69,7 @@ safety-critical device where "understood, imperfect grammar" beats
 "fluent, wrong term," but not yet reviewed by a native speaker for
 whether the roughness crosses into actually confusing. Not benchmarked
 against BLEU or a larger glossary — 10 terms, 10 test sentences, one
-language pair (vi-en) only. LoRA fine-tuning (CLAUDE.md's original
+language pair (vi-en) only. LoRA fine-tuning (AGENTS.md's original
 plan) would likely fix the fluency cost more thoroughly and should
 still happen before this is called done for Phase 3; logit biasing is
 the cheap-to-ship stopgap for Phase 2, not a replacement for it.
@@ -93,7 +93,7 @@ Before calling MT, replace a known glossary source term (e.g. "xe nâng"
 = forklift) with a placeholder string the model has presumably never
 seen in training, translate, then replace the placeholder in the output
 with the correct target term. No model changes, no beam search, works
-fine with the greedy/beam=1 decoding CLAUDE.md already requires for
+fine with the greedy/beam=1 decoding AGENTS.md already requires for
 latency. If it worked, it'd be a same-day fix for the "Glossary term
 accuracy ≥ 95% enforced" target.
 
@@ -141,7 +141,7 @@ across the other 5 language directions (each a different underlying
 model with a different vocabulary), or after any future model
 swap/fine-tune. A glossary system with an ~unknown, per-term,
 per-context failure rate is worse than no glossary system for a
-safety-critical use case (CLAUDE.md's own example terms are "safety
+safety-critical use case (AGENTS.md's own example terms are "safety
 commands") — it would create false confidence that a term is enforced
 when it silently isn't, some fraction of the time.
 
@@ -175,7 +175,7 @@ it" (no forced position) turned out to be enough once the bias-tracking
 bugs were fixed. What's still open:
 
 - **Fluency cost is real and unmeasured beyond spot-checking 5
-  sentences.** CLAUDE.md's original plan — LoRA fine-tune on the
+  sentences.** AGENTS.md's original plan — LoRA fine-tune on the
   termbase — would very likely produce more natural output than
   logit-patching a base model's decode, and is still the right target
   for Phase 3. This is the stopgap, not the destination.

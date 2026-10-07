@@ -5,7 +5,7 @@
 //! (Rubik Pi 3 not in hand). This still exercises the real pipeline
 //! end-to-end; swapping this for cpal-based live capture/playback,
 //! gated on an actual PTT button, is the only change needed once real
-//! hardware shows up (see CLAUDE.md -> Tooling).
+//! hardware shows up (see AGENTS.md -> Tooling).
 
 use std::path::PathBuf;
 

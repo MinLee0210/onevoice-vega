@@ -30,7 +30,7 @@
 //! export time. Confirmed by testing variable-length input directly: it
 //! hard-errors. So every call costs a fixed ~30s-worth of encoder
 //! compute regardless of actual utterance length, which is a real
-//! latency concern against CLAUDE.md's ≤1.2s target — not yet measured
+//! latency concern against AGENTS.md's ≤1.2s target — not yet measured
 //! on real hardware, see docs/TODO.md.
 
 use ndarray::{Array2, ArrayD};
@@ -42,6 +42,7 @@ use mel_spec::prelude::{BatchLogMelConfig, BatchLogMelSpectrogram};
 
 use crate::audio::{AudioBuffer, Utterance};
 use crate::error::OneVoiceError;
+use crate::stages::seq2seq::{self, DecoderSpec, LayerCache};
 
 const SAMPLE_RATE_HZ: u32 = 16_000;
 const N_FFT: usize = 400;
@@ -50,9 +51,6 @@ const N_MELS: usize = 80;
 const N_SAMPLES: usize = 480_000; // 30s @ 16kHz -- see module docs on why this is fixed
 const N_FRAMES: usize = 3_000;
 
-const NUM_LAYERS: usize = 6;
-const NUM_HEADS: usize = 8;
-const HEAD_DIM: usize = 64;
 const DECODER_START_TOKEN_ID: i64 = 50258;
 const TASK_TRANSCRIBE_TOKEN_ID: i64 = 50359;
 const NO_TIMESTAMPS_TOKEN_ID: i64 = 50363;
@@ -86,30 +84,12 @@ fn language_token_id(lang: &str) -> Result<i64, OneVoiceError> {
     }
 }
 
-struct LayerCache {
-    decoder_key: ArrayD<f32>,
-    decoder_value: ArrayD<f32>,
-    encoder_key: ArrayD<f32>,
-    encoder_value: ArrayD<f32>,
-}
-
-impl LayerCache {
-    fn empty() -> Self {
-        let empty = || ArrayD::<f32>::zeros(ndarray::IxDyn(&[1, NUM_HEADS, 0, HEAD_DIM]));
-        Self {
-            decoder_key: empty(),
-            decoder_value: empty(),
-            encoder_key: empty(),
-            encoder_value: empty(),
-        }
-    }
-}
-
 pub struct AsrEngine {
     tokenizer: Tokenizer,
     encoder: Session,
     decoder: Session,
     mel: BatchLogMelSpectrogram,
+    spec: DecoderSpec,
 }
 
 impl AsrEngine {
@@ -158,11 +138,17 @@ impl AsrEngine {
             OneVoiceError::Asr(format!("failed to build mel spectrogram: {source}"))
         })?;
 
+        // Derived from the decoder graph, not hardcoded: PhoWhisper-base is
+        // 6 layers / 8 heads, Whisper-small is 12 layers / 12 heads (see
+        // `seq2seq::DecoderSpec`).
+        let spec = DecoderSpec::from_session(&decoder).map_err(OneVoiceError::Asr)?;
+
         Ok(Self {
             tokenizer,
             encoder,
             decoder,
             mel,
+            spec,
         })
     }
 
@@ -265,7 +251,9 @@ impl AsrEngine {
         encoder_hidden_states: &ArrayD<f32>,
         lang_token: i64,
     ) -> Result<Vec<u32>, OneVoiceError> {
-        let mut cache: Vec<LayerCache> = (0..NUM_LAYERS).map(|_| LayerCache::empty()).collect();
+        let mut cache: Vec<LayerCache> = (0..self.spec.num_layers)
+            .map(|_| LayerCache::empty(&self.spec))
+            .collect();
         let mut current_input_ids = vec![
             DECODER_START_TOKEN_ID,
             lang_token,
@@ -303,23 +291,10 @@ impl AsrEngine {
                     last_step_logits[t as usize] = f32::NEG_INFINITY;
                 }
             }
-            let next_id = argmax(&last_step_logits) as i64;
+            let next_id = seq2seq::argmax(&last_step_logits) as i64;
 
-            for (i, layer) in cache.iter_mut().enumerate() {
-                layer.decoder_key = extract_owned(&outputs, &format!("present.{i}.decoder.key"))?;
-                layer.decoder_value =
-                    extract_owned(&outputs, &format!("present.{i}.decoder.value"))?;
-            }
-            if step == 0 {
-                // Cross-attention KV is only correctly populated on the
-                // first (no-cache) call -- see the `mt` module doc comment.
-                for (i, layer) in cache.iter_mut().enumerate() {
-                    layer.encoder_key =
-                        extract_owned(&outputs, &format!("present.{i}.encoder.key"))?;
-                    layer.encoder_value =
-                        extract_owned(&outputs, &format!("present.{i}.encoder.value"))?;
-                }
-            }
+            seq2seq::extract_present_caches(&outputs, &mut cache, step == 0)
+                .map_err(OneVoiceError::Asr)?;
 
             if next_id == EOS_TOKEN_ID {
                 break;
@@ -338,7 +313,7 @@ impl AsrEngine {
         encoder_hidden_states: &ArrayD<f32>,
         cache: &[LayerCache],
     ) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
-        let mut feeds = Vec::with_capacity(3 + NUM_LAYERS * 4);
+        let mut feeds = Vec::with_capacity(3 + self.spec.num_layers * 4);
 
         feeds.push((
             "input_ids".to_string(),
@@ -387,35 +362,14 @@ fn reflect_pad(samples: &[f32], pad: usize) -> Vec<f32> {
     out
 }
 
+/// Thin wrapper mapping the shared `seq2seq::tensor_input` string error
+/// onto this stage's `OneVoiceError::Asr` variant.
 fn tensor_input<'a, T, D>(data: D) -> Result<SessionInputValue<'a>, OneVoiceError>
 where
     T: ort::value::PrimitiveTensorElementType + std::fmt::Debug + Clone + 'static,
     D: ort::value::OwnedTensorArrayData<T>,
 {
-    Tensor::from_array(data)
-        .map(SessionInputValue::from)
-        .map_err(|source| OneVoiceError::Asr(format!("failed to build input tensor: {source}")))
-}
-
-fn extract_owned(
-    outputs: &ort::session::SessionOutputs,
-    name: &str,
-) -> Result<ArrayD<f32>, OneVoiceError> {
-    outputs[name]
-        .try_extract_array::<f32>()
-        .map_err(|source| {
-            OneVoiceError::Asr(format!("failed to read decoder output {name}: {source}"))
-        })
-        .map(|view| view.to_owned())
-}
-
-fn argmax(values: &[f32]) -> usize {
-    values
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.total_cmp(b))
-        .map(|(i, _)| i)
-        .expect("logits is never empty")
+    seq2seq::tensor_input(data).map_err(OneVoiceError::Asr)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # Piper TTS: another license trap, same shape as the NLLB one
 
-CLAUDE.md's model stack picks Piper as the TTS baseline with no license
+AGENTS.md's model stack picks Piper as the TTS baseline with no license
 caveat attached — worth one, in the same spirit as the existing NLLB
 CC-BY-NC callout. Two separate issues, both hiding behind a
 repo-level `license: mit` tag that doesn't tell the whole story.
@@ -55,7 +55,7 @@ on-device Rust binary statically or dynamically links `espeak-ng` (or a
 port of it) to do phonemization, the FSF's position on GPL "linking"
 would treat the combined work as a derivative subject to GPL-3.0 —
 which would require us to release our own source under GPL-3.0 too if
-we distribute the device. That's a real conflict with CLAUDE.md's
+we distribute the device. That's a real conflict with AGENTS.md's
 commercialization ambitions (Qualcomm ecosystem partnership,
 "commercializable local product story"). Running `espeak-ng` as a
 *separate process* (not linked) is a common way projects argue around

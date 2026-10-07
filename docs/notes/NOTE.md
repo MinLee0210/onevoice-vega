@@ -12,7 +12,7 @@ from the translation task since it's independent of the audio stages.
   optimum-onnx, sentencepiece, sacremoses, ipykernel; registered it as a
   Jupyter kernel). See `experiments/README.md` → Setup.
 - `experiments/03_mt.ipynb`: loaded `Helsinki-NLP/opus-mt-vi-en`
-  (Apache-licensed Opus-MT baseline per CLAUDE.md's model stack),
+  (Apache-licensed Opus-MT baseline per AGENTS.md's model stack),
   translated test sentences with PyTorch as the reference, exported to
   ONNX via `optimum` (encoder + merged decoder-with-past), verified the
   ONNX output matches PyTorch exactly, converted Marian's slow
@@ -64,7 +64,7 @@ per the ask.
 - `experiments/02_asr.ipynb`: downloaded
   [huuquyet/PhoWhisper-base](https://huggingface.co/huuquyet/PhoWhisper-base)
   (ONNX conversion of `vinai/PhoWhisper-base`, the VI baseline from
-  CLAUDE.md) and
+  AGENTS.md) and
   [onnx-community/whisper-small](https://huggingface.co/onnx-community/whisper-small)
   (ONNX conversion of `openai/whisper-small`, the EN/ZH/KO baseline) —
   both already ship encoder/decoder ONNX *and* a proper fast
@@ -96,7 +96,7 @@ per the ask.
 - **Big one:** Qualcomm's own AI Hub does not currently have a working
   quantized-Whisper deployment path for QCS6490 (the Rubik Pi 3's SoC
   family) — [ai-hub-models issue #281](https://github.com/qualcomm/ai-hub-models/issues/281),
-  closed as not planned. CLAUDE.md's model stack table casually lists
+  closed as not planned. AGENTS.md's model stack table casually lists
   "Whisper-Small (AI Hub, pre-quantized)" as if this is solved; it
   isn't. Full writeup with sources and options in
   `docs/decisions/qcs6490-whisper-deployment-risk.md` — worth reading
@@ -183,7 +183,7 @@ real license investigation before any implementation happened.
     fine (nothing shipped) — this only matters if/when it ends up in
     the actual device binary.
 - These two issues compound the same lesson from the NLLB callout in
-  CLAUDE.md: a clean-looking top-level license tag doesn't mean the
+  AGENTS.md: a clean-looking top-level license tag doesn't mean the
   thing is actually clear to ship — check the *specific* asset and its
   *specific* runtime dependencies, not just the repo badge.
 
@@ -204,7 +204,7 @@ one real lead, one confirmed dead end.
 model for Vietnamese ASR, vs. PhoWhisper-base's 74M attention-based
 seq2seq. The size difference is almost beside the point: CTC has no
 autoregressive decode loop at all, which is a structurally different
-latency profile than everything else in the pipeline. CLAUDE.md itself
+latency profile than everything else in the pipeline. AGENTS.md itself
 names the autoregressive decoder as *the* latency bottleneck — this
 sidesteps that bottleneck entirely rather than just shrinking it.
 Caveat: couldn't confirm WER vs. PhoWhisper or ONNX export availability
@@ -218,7 +218,7 @@ Went looking specifically for a fix to the Piper/espeak-ng GPL trap
 from earlier today. No fix exists:
 - OpenPhonemizer (the one credible non-GPL espeak-ng alternative) has
   no Vietnamese support and was archived in March 2026.
-- Kyutai Pocket TTS (CLAUDE.md's own listed TTS upgrade path) doesn't
+- Kyutai Pocket TTS (AGENTS.md's own listed TTS upgrade path) doesn't
   support Vietnamese yet either, as of checking directly against its
   HF repos — English-only at the base model, the May 2026 multilingual
   update added French/general voices but not Vietnamese. (Worth
@@ -361,7 +361,7 @@ MT) + a from-scratch log-mel feature extractor.
   shipped a Rust ASR stage that runs cleanly and transcribes garbage.
 - **New latency concern, confirmed not assumed**: tried feeding the
   ONNX encoder variable-length (unpadded) mel input instead of the full
-  30-second pad, since CLAUDE.md's ≤1.2s target makes 30s-worth of
+  30-second pad, since AGENTS.md's ≤1.2s target makes 30s-worth of
   encoder compute for a short utterance look wasteful. It hard-errors —
   the exported graph's positional embeddings are a fixed-size constant
   baked in at export time, despite the graph metadata claiming a
@@ -402,7 +402,7 @@ Wrote and ran it now.
     chain, `ModuleNotFoundError: No module named 'av.option'` — an
     unmaintained transitive dependency (`audiolab`) incompatible with
     the `av` version available now.
-  - `deepfilternet` (CLAUDE.md's denoise *upgrade path*, tried as an
+  - `deepfilternet` (AGENTS.md's denoise *upgrade path*, tried as an
     alternative Python baseline): also broken —
     `torchaudio.backend.common` doesn't exist in current `torchaudio`
     anymore, and no older `torchaudio` compatible with our `torch` is
@@ -471,7 +471,7 @@ assumption to lean on uncritically.
 - **Vasco's own data undercuts headline accuracy claims industry-wide**:
   they cite "96% accuracy" from the WMT2022 text benchmark, but their
   own reviewers report real-world speech accuracy dropping to 78-84% in
-  65+dB street noise. Useful for calibrating what CLAUDE.md's ≤15% WER
+  65+dB street noise. Useful for calibrating what AGENTS.md's ≤15% WER
   @ 75-85dB target should be benchmarked against — a competitor's
   marketing number, not their real-world number.
 - **Waverly Labs Pilot was discontinued in April 2024** — the company
@@ -484,15 +484,15 @@ assumption to lean on uncritically.
   offline set. Reinforces that PhoWhisper/VinAI's Vietnamese lineage is
   a genuine, uncontested specialization, not a "nice to have."
 - **iFlytek's audio front-end (4-mic U-shaped array) is the closest
-  real technical comparator** to CLAUDE.md's noise-first design —
+  real technical comparator** to AGENTS.md's noise-first design —
   worth a direct benchmark once hardware exists, since they use 2x the
-  mic count CLAUDE.md currently plans.
+  mic count AGENTS.md currently plans.
 - **Every competitor's business model is subscription/data-plan
   attached to connectivity** — structurally incompatible with
   OneVoice's offline architecture. This needs an explicit, prepared
   answer for the Phase 2/3 pitch (judging weighs business viability at
   25%), not something to leave implicit.
-- **Could not independently verify** CLAUDE.md's claim that Vbee is "a
+- **Could not independently verify** AGENTS.md's claim that Vbee is "a
   Vietnamese startup building offline voice solutions on Qualcomm edge
   platforms" — everything findable about Vbee is their cloud TTS SaaS
   product. Not contradicted, just unconfirmed by this research; flagged
@@ -623,7 +623,7 @@ Did make real, uncontroversial progress on the part that isn't
 risky: `Glossary::load` now actually reads a real termbase
 (`data/glossary/termbase.tsv`, 10 VI/EN/ZH/KO industrial terms) instead
 of being a no-op stub. Not wired into MT — this is data infrastructure
-for whenever the real fix (LoRA fine-tune, per CLAUDE.md's own plan)
+for whenever the real fix (LoRA fine-tune, per AGENTS.md's own plan)
 happens, not a substitute for it. ZH/KO terms in that file are my own
 best-effort translations of common vocabulary, not reviewed by a native
 speaker — flagged in the file/decision doc as needing review before
@@ -728,7 +728,7 @@ Result: all four languages (VI/EN/ZH via Piper, KO via MMS) produce
 real, round-trip-ASR-verified audio through the actual Rust path, and
 the full pipeline runs capture→denoise→VAD→ASR→MT→TTS→playback for the
 first time — measured at ~550-600ms button-release→audio on CPU, well
-under CLAUDE.md's ≤1.2s target. Re-packed and re-uploaded the
+under AGENTS.md's ≤1.2s target. Re-packed and re-uploaded the
 `models-v1` release bundle to include the new `espeak-ng-data`;
 verified the real `gh release download` path end-to-end with a
 checksum match, not just the packing step. Full writeup:

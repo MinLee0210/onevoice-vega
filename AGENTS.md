@@ -1,10 +1,19 @@
-# CLAUDE.md — OneVoice AI Challenge Project
+# AGENTS.md — QUAVIO/Vega (OneVoice AI Challenge)
 
 ## Project
-On-device (no cloud) speech translation device for noisy industrial
-environments (factories, construction, logistics, hospitals). Built for
-Saigon AI Hub × Qualcomm "OneVoice AI Challenge." Currently Phase 2
-(technical spec submission, due July 2026).
+On-device (no cloud) speech translation for noisy industrial environments
+(factories, construction, logistics, hospitals), built for the Saigon AI
+Hub × Qualcomm "OneVoice AI Challenge." One translation engine, deployed
+in two carriers that share the same QCS6490 silicon, models, and runtime:
+
+- **Vega Hand** — ruggedized push-to-talk handheld, one-to-one exchanges
+  on the floor (the original single-device design).
+- **Vega Air** — drone-mounted multilingual broadcast payload, one-to-many
+  (a single spoken instruction broadcast in VI/EN/ZH/KO simultaneously).
+
+Phase 2 technical spec was submitted 03/08/2026 (see
+docs/reports/TECHNICAL PROPOSAL_ QUAVIO_Vega.pdf). Phase 3 (prototype
+build) is next.
 
 ## Languages/pairs
 VI↔EN, VI↔ZH, VI↔KO (6 directions total)
@@ -14,12 +23,22 @@ Half-duplex, push-to-talk (PTT). One party holds button, speaks, releases;
 device translates and plays back. No full-duplex streaming needed —
 process complete utterances (≤10s), not partial/incremental audio.
 
+Vega Air is broadcast (operator-initiated), not conversational: the
+operator speaks into the ground station, and the payload plays the
+translation back in each target language sequentially.
+
 ## Hardware target
 - Prototype: Rubik Pi 3 (Qualcomm Dragonwing QCS6490), 8-core Kryo 670 CPU,
   Hexagon NPU @ 12 TOPS, 8GB LPDDR4x, 128GB UFS
-- Production vision: same QCS6490-class SoM shrunk into ruggedized
-  handheld/neckband form factor, IP54+, physical PTT button, LED status
-  (no touchscreen)
+- **Vega Hand** — ruggedized handheld/neckband, IP54+, physical PTT
+  button, LED status (no touchscreen), ~140×60×25mm, ≤300g, ≥8h on 5,000mAh
+- **Vega Air** — payload pod (~120×70×50mm, ≤300g, IP54) under a DJI
+  Matrice-class multirotor; directional horn speaker intelligible at
+  20–30m; MAVLink/UART flight-controller telemetry feed for the ego-noise
+  model. Broadcast only in the primary mode (source audio is captured
+  cleanly at the ground station — the hard acoustic problem is *output*
+  intelligibility, not input); two-way capture under rotor wash is a
+  stretch.
 
 ## Compute split
 ```
@@ -88,7 +107,12 @@ Connectivity required                      zero (airplane-mode demo)
 ```
 
 ## Differentiators (write into every proposal/pitch)
-1. **Industrial glossary engine** — VI/EN/ZH/KO parallel termbase
+1. **Two communication shapes, one engine** — one-to-one (Hand) and
+   one-to-many multilingual broadcast (Air) from one codebase, one BOM,
+   one model set. No competitor spans both, and no drone loudspeaker does
+   on-device translation at all (see
+   docs/decisions/vega-air-and-feature-research-2026-08.md).
+2. **Industrial glossary engine** — VI/EN/ZH/KO parallel termbase
    (safety commands, machine names, logistics terms). Enforcement today
    is a working decoder-logit-bias technique (validated vi-en only,
    100% term accuracy on a 10-sentence test set vs. 50% baseline, at a
@@ -96,15 +120,19 @@ Connectivity required                      zero (airplane-mode demo)
    docs/decisions/glossary-runtime-enforcement-2026-07.md), shipped as
    the Phase 2 stopgap. LoRA fine-tune remains the intended Phase 3
    upgrade for better fluency. Swappable per-industry vocab packs.
-2. **Noise-first audio front-end** — 2-mic beamforming + denoise,
-   benchmarked WER-vs-SNR curve at 70-85dB factory noise. Note: iFlytek
-   (a real competitor, see docs/decisions/competitor-landscape-2026-07.md)
-   uses a 4-mic array for its noisy-environment claims — worth a direct
-   benchmark once hardware exists in case 2 mics turns out to be
-   optimistic, not yet a reason to change the spec.
-3. **Latency engineering** — denoise-during-capture, greedy MT decode,
+3. **Noise-first audio front-end** — 2-mic beamforming + denoise,
+   benchmarked WER-vs-SNR curve at 70-85dB factory noise. iFlytek (a real
+   competitor) uses a 4-mic array — worth a direct benchmark once hardware
+   exists in case 2 mics turns out to be optimistic, not yet a reason to
+   change the spec. Note: iFlytek *does* list Vietnamese among its 18
+   offline languages, so the pitch should claim "Vietnamese-first" and
+   "Vietnamese *industrial*", not "nobody supports offline VI".
+4. **Latency engineering** — denoise-during-capture, greedy MT decode,
    streaming TTS playback, instrumented per-stage timing / live latency
    HUD for demos.
+5. **Haptic/vibration feedback** — unclaimed by every competitor
+   researched; cheap, glove-friendly state signaling (listening /
+   translating / done) without looking at an LED.
 
 ## Tooling / language split
 ```
@@ -163,7 +191,9 @@ docs/decisions/qcs6490-whisper-deployment-risk.md.
 - Co-hosted with Qualcomm; part of Qualcomm's broader Vietnam AI R&D push
   (Hanoi/HCMC AI center opened June 2025, VinAI/MovianAI acquisition
   April 2025 — PhoWhisper/PhoMT lineage is now Qualcomm-owned talent).
-- Judging: Technical 50% / Innovation 25% / Business viability 25%.
+- Judging (Phase 2 rubric): AI Approach & Technical Design 35% / Hardware
+  & Device 25% / Business Solution 15% / Problem & Impact 15% / Team &
+  Execution 10%.
 - Likely goal from Qualcomm's side: Dragonwing/QCS design wins, AI Hub
   toolchain adoption, reference showcase demos, a commercializable local
   product story (Vbee AI is cited as the existing precedent — Vietnamese
@@ -231,6 +261,24 @@ Phase 5 (Nov 2026)             → finale demo, HCMC
   degrades to no-translation when disconnected. This makes "zero
   connectivity required" a real, differentiated claim worth leading
   with in the pitch, not just a spec line. Same doc as above.
+- **Vega Air has no direct competitor.** No drone loudspeaker (DJI's
+  Mavic 3 Enterprise Speaker, or the Shenzhen PSDK aftermarket: Puyu,
+  CZI, Ramoton) does speech translation — "multilingual" there means TTS
+  of pre-typed text. The 20–30m intelligibility bar is trivial vs. even
+  DJI's weakest speaker (100m @70dB); the differentiation is entirely the
+  on-device ASR→MT→TTS engine. See
+  docs/decisions/vega-air-and-feature-research-2026-08.md.
+- **Vega Air ego-noise (two-way stretch) is unproven.** RPM-harmonic
+  subtraction from flight-controller telemetry is novel (no published
+  precedent) and the literature warns that naive subtractive front-ends
+  blow up streaming false-alarm rate ~10× — prefer *conditioning* the
+  neural denoiser over hard subtraction, add a near-rotor reference mic,
+  and train/eval on DroneAudioSet. Keep this out of the Phase 3 demo.
+- **iFlytek DOES list Vietnamese offline** (18 languages) — the "nobody
+  supports offline VI" claim is wrong; use "Vietnamese-first / industrial"
+  instead. Timekettle now ships a handheld offline translator (T1, 44
+  packs) but still has no Vietnamese offline pack. RelayX sets the
+  ruggedization bar (MIL-STD-810H, IP68+IP69K, 110dB, Class 1 Div 2).
 
 ## Repo layout
 ```

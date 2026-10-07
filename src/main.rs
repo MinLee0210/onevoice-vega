@@ -21,7 +21,7 @@ use config::Config;
 use pipeline::{Pipeline, PipelineConfig};
 
 /// OneVoice: on-device VI<->EN/ZH/KO speech translation for noisy
-/// industrial environments. See CLAUDE.md for the full project spec.
+/// industrial environments. See AGENTS.md for the full project spec.
 ///
 /// Runs one push-to-talk cycle: reads `input_wav`, denoises, trims
 /// silence, transcribes, translates, and (once TTS lands) synthesizes

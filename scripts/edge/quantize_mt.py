@@ -1,8 +1,9 @@
-import os
 import shutil
 from pathlib import Path
+
 from optimum.onnxruntime import ORTQuantizer
 from optimum.onnxruntime.configuration import AutoQuantizationConfig
+
 
 def main():
     dirs = [Path("models/mt/en-vi"), Path("models/mt/vi-en")]
@@ -10,9 +11,9 @@ def main():
     for save_dir in dirs:
         if not save_dir.exists():
             continue
-        print(f"\n==================================================")
+        print("\n==================================================")
         print(f"Quantizing translation model components in {save_dir}...")
-        print(f"==================================================")
+        print("==================================================")
 
         # 1. Define ARM64 optimized dynamic quantization config
         qconfig = AutoQuantizationConfig.arm64(is_static=False, per_channel=False)
@@ -28,9 +29,7 @@ def main():
 
             # This will save the quantized model to the directory with the default suffix '_quantized'
             quantizer.quantize(
-                save_dir=save_dir,
-                quantization_config=qconfig,
-                file_suffix="quantized"
+                save_dir=save_dir, quantization_config=qconfig, file_suffix="quantized"
             )
 
             # Verify that the quantized model was created
@@ -42,7 +41,9 @@ def main():
             original_size = onnx_path.stat().st_size / (1024 * 1024)
             quantized_size = quantized_path.stat().st_size / (1024 * 1024)
             print(f"  Original:  {original_size:.1f} MB")
-            print(f"  Quantized: {quantized_size:.1f} MB (Reduction: {(1.0 - quantized_size/original_size)*100:.1f}%)")
+            print(
+                f"  Quantized: {quantized_size:.1f} MB (Reduction: {(1.0 - quantized_size / original_size) * 100:.1f}%)"
+            )
 
         # 3. Swap the files
         print("\nReplacing original models with quantized variants...")
@@ -59,6 +60,7 @@ def main():
             print(f"  Replaced {component}.onnx with quantized version.")
 
     print("\nQuantization successfully completed for all directories!")
+
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,6 @@
 # Risk: "Whisper-Small (AI Hub, pre-quantized)" isn't actually a ready path on QCS6490
 
-CLAUDE.md's model stack table lists the EN/ZH/KO ASR baseline as
+AGENTS.md's model stack table lists the EN/ZH/KO ASR baseline as
 "Whisper-Small (AI Hub, pre-quantized)" as if Qualcomm AI Hub already
 has a working, deployable, quantized Whisper for the QCS6490. As of
 writing, **that's not true** — worth flagging loudly before Phase 3
@@ -39,8 +39,8 @@ aarch64 Linux either, per the same issue thread.
 
 ## Why this matters for OneVoice
 
-CLAUDE.md's plan leans on "AI Hub Workbench porting journey" as part of
-the pitch story (see CLAUDE.md → Contest/business context: "document
+AGENTS.md's plan leans on "AI Hub Workbench porting journey" as part of
+the pitch story (see AGENTS.md → Contest/business context: "document
 the AI Hub/Workbench porting journey"). If AI Hub's own Whisper support
 for this exact chipset is a known dead end, that part of the story needs
 a real answer before Phase 3, not just an assumption it'll work.
@@ -53,7 +53,7 @@ a real answer before Phase 3, not just an assumption it'll work.
 - Not yet validated: any of this running through the **QNN execution
   provider** specifically, on real hardware. That's the actual open
   question — CPU-only ASR at Whisper-small size is very unlikely to hit
-  the latency target on a Kryo 670, per CLAUDE.md's own reasoning for
+  the latency target on a Kryo 670, per AGENTS.md's own reasoning for
   why ASR/MT need the NPU in the first place.
 
 ## Options to evaluate before Phase 3

@@ -1,10 +1,10 @@
 # Pre-commit hooks for OneVoice (Rust crate + Python notebooks + bash).
 #
-# Enable once per clone:
-#   pip install pre-commit          # or: conda activate audio-lab (it's in requirements.txt)
-#   pre-commit install
+# Python is managed with uv (see pyproject.toml). Enable once per clone:
+#   uv sync --group dev            # installs pre-commit + ruff into .venv
+#   uv run pre-commit install
 # Run on everything (e.g. after adding a hook):
-#   pre-commit run --all-files
+#   uv run pre-commit run --all-files
 #
 # Notebooks: outputs are STRIPPED on commit (nbstripout) to keep diffs
 # clean and the repo small. The validation evidence they used to carry
@@ -37,6 +37,13 @@ repos:
         # WAV eval fixtures are ~230KB; real models/bundle are gitignored.
         # This is a backstop against force-adding a model/onnx/bundle.
         args: ['--maxkb=512']
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff            # lint (pyproject.toml [tool.ruff])
+        args: [--fix]
+      - id: ruff-format     # format (pyproject.toml [tool.ruff])
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1

@@ -1,4 +1,4 @@
-//! Composes the stages in the fixed order from CLAUDE.md:
+//! Composes the stages in the fixed order from AGENTS.md:
 //! capture -> denoise -> VAD trim -> ASR -> MT -> TTS -> playback.
 //! This is the one place that knows the pipeline order; stage modules
 //! don't call each other.
@@ -77,7 +77,7 @@ impl Pipeline {
     }
 
     /// Runs one PTT press-release cycle end to end. Times each stage —
-    /// this is the "button-release -> first audio" latency CLAUDE.md
+    /// this is the "button-release -> first audio" latency AGENTS.md
     /// targets at ≤1.2s, *excluding* one-time model loading in `new()`.
     /// Measured on whatever CPU this binary runs on, not the Hexagon
     /// NPU target hardware — see the logged warning every run emits.
@@ -95,6 +95,18 @@ impl Pipeline {
         let t = Instant::now();
         let trimmed = self.vad.trim(denoised)?;
         let vad_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        // Silero found no speech — don't hand ASR a 30s-padded silence
+        // buffer (it would transcribe noise into garbage, then MT/TTS
+        // would happily translate it). On a real device this is the LED
+        // "no-speech" signal; here it's a clean no-op cycle.
+        if trimmed.samples.is_empty() {
+            tracing::info!(
+                vad_ms = format!("{vad_ms:.1}"),
+                "no speech detected after VAD trim — skipping ASR/MT/TTS"
+            );
+            return Ok(());
+        }
 
         let t = Instant::now();
         let utterance = self.asr.transcribe(&trimmed, &self.source_lang)?;
@@ -115,7 +127,7 @@ impl Pipeline {
             asr_ms = format!("{asr_ms:.1}"),
             mt_ms = format!("{mt_ms:.1}"),
             through_mt_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
-            "latency through MT (CPU dev machine, NOT the Hexagon NPU target -- see CLAUDE.md -> Latency target; TTS timed separately below)"
+            "latency through MT (CPU dev machine, NOT the Hexagon NPU target -- see AGENTS.md -> Latency target; TTS timed separately below)"
         );
 
         let t = Instant::now();
@@ -125,7 +137,7 @@ impl Pipeline {
             tts_first_chunk_ms = format!("{tts_first_chunk_ms:.1}"),
             tts_total_ms = format!("{tts_ms:.1}"),
             through_tts_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
-            "TTS chunked (through_tts_ms is the full button-release -> synthesized-audio latency CLAUDE.md targets at <=1.2s)"
+            "TTS chunked (through_tts_ms is the full button-release -> synthesized-audio latency AGENTS.md targets at <=1.2s)"
         );
 
         let t = Instant::now();

@@ -1,7 +1,7 @@
 //! Denoise stage: RNNoise via the `nnnoiseless` crate (pure Rust,
 //! BSD-3-Clause, weights compiled in — no ONNX file to load, unlike
 //! every other ML-backed stage). Runs on CPU during capture (zero added
-//! latency — see CLAUDE.md -> Pipeline).
+//! latency — see AGENTS.md -> Pipeline).
 //!
 //! RNNoise's feature/band structure is hardcoded for a fixed 48kHz
 //! input processed in fixed 480-sample (10ms) frames — `nnnoiseless`

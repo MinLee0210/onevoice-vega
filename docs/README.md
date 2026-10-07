@@ -8,7 +8,7 @@ docs/
 ├── TODO.md         running task list (edit directly, group by phase)
 ├── notes/           freeform dated notes: meetings, research findings,
 │                    device bring-up logs
-├── decisions/       one file per open decision/risk from CLAUDE.md
+├── decisions/       one file per open decision/risk from AGENTS.md
 │                    (e.g. MADLAD-vs-Opus-MT.md, rust-vs-cpp.md) —
 │                    record the question, options, and the call once made
 ├── proposals/       drafts for phase submissions (Phase 2 tech spec,

@@ -44,13 +44,13 @@ ONEVOICE_HF_PYTHON=/path/to/audio-lab/bin/python3 scripts/setup_models.sh rebuil
 
 ## `pack_models.sh` — build the distributable bundle
 
-Tars the current `models/` tree into `dist/onevoice-models.tar.gz` and
+Tars the current `models/` tree into `dist/onevoice_models_v2.tar.gz` and
 prints the `gh release create` command to publish it. Run this after a
 `setup_models.sh rebuild` when you want to refresh the downloadable
 bundle that the default `setup_models.sh` pulls.
 
 ```sh
-scripts/pack_models.sh                 # -> dist/onevoice-models.tar.gz
+scripts/pack_models.sh                 # -> dist/onevoice_models_v2.tar.gz
 scripts/pack_models.sh my-bundle.tar.gz
 ```
 
