@@ -2,6 +2,7 @@
 
 - Source: huuquyet/PhoWhisper-base (pre-converted ONNX -- not exported by us; underlying
   weights are vinai/PhoWhisper-base, BSD-3-Clause)
+- License: BSD-3-Clause (vinai/PhoWhisper-base)
 - Packaged: 2026-07-15
 - Precision: int8 (quantized variant from the source repo, not quantized
   by us). On a 10-sample VIVOS slice, identical WER to fp32

@@ -3,8 +3,11 @@
 - Source: facebook/mms-tts-kor (Meta MMS-TTS, VITS). PyTorch checkpoint exported to
   ONNX here (unlike Piper, which ships ONNX) -- see experiments/04_tts.ipynb
   section 5.
-- License: MIT (MMS models) -- no espeak/GPL dependency, unlike the Piper
-  stages.
+- License: **CC-BY-NC 4.0** (facebook/mms-tts-kor model card, checked
+  2026-10-07; the MMS *code* is MIT, the weights are not). Non-commercial
+  only -- fine for the hackathon prototype, a commercialization blocker.
+  Earlier versions of this file said MIT; that was wrong. No espeak/GPL
+  dependency, unlike the Piper stages. See THIRD_PARTY_LICENSES.md.
 - Packaged: 2026-07-16
 - Precision: fp32. Exported with noise_scale=0 and noise_scale_duration=0
   for deterministic, reproducible output (VITS is stochastic by default);

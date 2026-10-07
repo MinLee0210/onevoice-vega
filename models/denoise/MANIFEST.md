@@ -1,5 +1,7 @@
 # denoise
 
+- License: BSD-3-Clause (`nnnoiseless` crate; RNNoise weights compiled in)
+
 No model file here, deliberately — unlike every other stage.
 
 RNNoise (CLAUDE.md's denoise baseline) never shipped an official ONNX

@@ -71,7 +71,7 @@ this pipeline has to design around.
 | ASR (VI) | PhoWhisper-base 74M (BSD-3-Clause) — validated, WER 2.2% on VIVOS sample | PhoWhisper-small 244M, W8A16 on Hexagon; also worth evaluating VietASR (13M, CTC not seq2seq — no autoregressive decode loop at all, Apache-2.0), see docs/decisions/pipeline-improvement-research-2026-07.md |
 | ASR (EN/ZH/KO) | Whisper-Small — **not** via AI Hub pre-quantized (that path is currently broken for QCS6490, see Hardware toolchain below); use a generic pre-made ONNX instead (e.g. onnx-community/whisper-small, MIT) | Whisper-Large-v3-Turbo quantized |
 | MT | Opus-MT per-pair (~300MB, Apache/CC-BY, INT8) — validated, Rust port working end-to-end | LoRA fine-tune on industrial glossary; VinAI-Translate/envit5 for VI↔EN quality |
-| TTS | All 4 target langs (device is bidirectional): Piper (VITS/ONNX, CPU real-time) for VI (`vais1000-medium`) / EN (`lessac`) / ZH (`huayan`, Mandarin); MMS-TTS (`facebook/mms-tts-kor`, MIT, VITS/ONNX) for KO — Piper has no Korean voice. **Real Rust implementation, not a stub** — `piper-rs` crate for VI/EN/ZH (VITS + espeak-ng phonemization), hand-rolled `uroman` + ported char-tokenizer + raw `ort` inference for KO (no crate covers MMS). All 4 produce genuine audio, round-trip-ASR verified through the real Rust path, not just the Python notebook. See license trap below (not a hackathon blocker) and `src/stages/tts.rs` module docs for the `piper-rs` build gotcha | Kyutai Pocket TTS once it supports Vietnamese (English-only as of this writing, checked directly) |
+| TTS | All 4 target langs (device is bidirectional): Piper (VITS/ONNX, CPU real-time) for VI (`vais1000-medium`) / EN (`lessac`) / ZH (`huayan`, Mandarin); MMS-TTS (`facebook/mms-tts-kor`, **CC-BY-NC 4.0** — non-commercial, see THIRD_PARTY_LICENSES.md; VITS/ONNX) for KO — Piper has no Korean voice. **Real Rust implementation, not a stub** — `piper-rs` crate for VI/EN/ZH (VITS + espeak-ng phonemization), hand-rolled `uroman` + ported char-tokenizer + raw `ort` inference for KO (no crate covers MMS). All 4 produce genuine audio, round-trip-ASR verified through the real Rust path, not just the Python notebook. See license trap below (not a hackathon blocker) and `src/stages/tts.rs` module docs for the `piper-rs` build gotcha | Kyutai Pocket TTS once it supports Vietnamese (English-only as of this writing, checked directly) |
 
 **License trap:** NLLB is CC-BY-NC — avoid for anything meant to be
 commercialized. MADLAD-400 (Apache 2.0) is broad-coverage but likely too
@@ -84,8 +84,9 @@ used for VI/EN/ZH) is GPL-3.0, and whether embedding it in the shipped
 binary GPL-taints the product is an unresolved legal question — **but
 this is a commercialization question, not a hackathon blocker** (GPL
 binds at distribution, not a prototype/demo); revisit before Phase 3+
-commercial commits. The Korean path (MMS-TTS) is MIT and avoids espeak
-entirely. Full detail: docs/decisions/piper-vi-voice-license-trap.md.
+commercial commits. The Korean path (MMS-TTS) avoids espeak entirely but its weights are
+CC-BY-NC 4.0 (checked 2026-10-07; earlier notes said MIT, which was wrong), so
+it needs a commercially licensed replacement before the product ships. Full detail: docs/decisions/piper-vi-voice-license-trap.md.
 
 ## Memory budget (quantized, resident)
 ~2GB total. Lazy-load only the active language pair's MT+TTS to stay

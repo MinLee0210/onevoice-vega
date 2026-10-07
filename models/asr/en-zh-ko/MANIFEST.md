@@ -2,6 +2,7 @@
 
 - Source: onnx-community/whisper-small (pre-converted ONNX -- not exported by us;
   underlying weights are openai/whisper-small, MIT)
+- License: MIT (openai/whisper-small)
 - Packaged: 2026-07-15
 - Precision: int8 (quantized variant from the source repo)
 - One shared multilingual model for EN/ZH/KO per CLAUDE.md's model

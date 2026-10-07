@@ -45,6 +45,18 @@ if [ "${#missing[@]}" -gt 0 ]; then
     exit 1
 fi
 
+# Every model dir must declare its license in MANIFEST.md, so a bundle can't
+# ship an unaudited model (see THIRD_PARTY_LICENSES.md).
+unlicensed=()
+while IFS= read -r manifest; do
+    grep -q '^- License:' "$manifest" || unlicensed+=("$manifest")
+done < <(find models -name MANIFEST.md | sort)
+if [ "${#unlicensed[@]}" -gt 0 ]; then
+    echo "error: manifest(s) missing a '- License:' line -- see THIRD_PARTY_LICENSES.md." >&2
+    printf '  %s\n' "${unlicensed[@]}" >&2
+    exit 1
+fi
+
 echo "packing models/ -> $OUT ..."
 # Archive paths are relative to the repo root (models/...), so extracting
 # at the repo root restores the tree in place. Skip .gitkeep placeholders.
