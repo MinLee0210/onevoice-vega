@@ -124,6 +124,22 @@ the win is architecture/export dependent, so benchmark the exact artifact.
 A per-model × per-device latency matrix is produced by
 `scripts/qaihub/benchmark_qnn.py` (CSV at `/tmp/onevoice_qnn_latency.csv`).
 
+### Device matrix — PhoWhisper-base encoder (FP32 → full-INT8 QNN)
+
+| Device | Chipset | Hexagon | Inference | Peak mem |
+|---|---|---|---|---|
+| Dragonwing RB3 Gen 2 Vision Kit **(target)** | qcs6490 | v68 | 230.4 ms | 17.9 MB |
+| Arduino VENTUNO Q | qcs8275 | v73 | 56.5 ms | 16.1 MB |
+| Dragonwing IQ-9075 EVK | qcs9075 | v73 | 56.2 ms | 20.0 MB |
+| QCS8550 (Proxy) | qcs8550-proxy | v73 | 71.3 ms | 143.1 MB |
+| Dragonwing Q-6690 MTP | qcm6690 | v73 | 300.6 ms | 152.9 MB |
+
+Two takeaways: (1) newer Hexagon v73 HTPs run the encoder ~4× faster than the
+target's v68, so the QCS6490 is genuinely the constrained part; (2) the target
+is the *slowest per-model* result here (230 ms) while `whisper-base` on the
+*same* QCS6490 was 63 ms — an export-quality problem, not a hardware ceiling.
+
+
 ## Sources (firecrawl)
 
 - HF `qualcomm-ai-hub-community/whisper-{base,small}-multilingual-qcs6490-qnn-int8`

@@ -198,8 +198,21 @@ def sample_inputs(entry: dict, model_path: Path) -> dict[str, list[np.ndarray]]:
     return out
 
 
-def wait_for(job, timeout_s: int = 900) -> qai_hub.JobStatus:
-    return job.wait(timeout=timeout_s)
+def wait_for(job, timeout_s: int = 900, retries: int = 6) -> qai_hub.JobStatus:
+    """Wait for a job, retrying through transient network/DNS blips.
+
+    Long multi-device benchmarks outlive laptop sleep / network drops, which
+    surface here as DNS/connection errors out of the polling loop.
+    """
+    import time
+
+    for attempt in range(retries):
+        try:
+            return job.wait(timeout=timeout_s)
+        except Exception:  # noqa: BLE001
+            if attempt == retries - 1:
+                raise
+            time.sleep(20)
 
 
 def humanize_bytes(n: float | int) -> str:

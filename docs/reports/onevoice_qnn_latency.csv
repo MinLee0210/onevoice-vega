@@ -1,0 +1,9 @@
+model,device,chipset,status,latency_ms,peak_mem_mb
+phowhisper_base_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,230.4,17.9
+phowhisper_base_encoder,Dragonwing Q-6690 MTP,qualcomm-qcm6690,OK,300.6,152.9
+phowhisper_base_encoder,Dragonwing IQ-9075 EVK,qualcomm-qcs9075,OK,56.2,20.0
+phowhisper_base_encoder,Arduino VENTUNO Q,qualcomm-qcs8275,OK,56.5,16.1
+phowhisper_base_encoder,QCS8550 (Proxy),qualcomm-qcs8550-proxy,OK,71.3,143.1
+whisper_base_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,63.0,17.9
+whisper_base_encoder,Dragonwing Q-6690 MTP,qualcomm-qcm6690,OK,139.5,183.9
+whisper_base_encoder,Dragonwing IQ-9075 EVK,qualcomm-qcs9075,OK,15.0,17.9
