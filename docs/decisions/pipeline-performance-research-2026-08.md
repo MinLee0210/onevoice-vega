@@ -124,20 +124,30 @@ the win is architecture/export dependent, so benchmark the exact artifact.
 A per-model × per-device latency matrix is produced by
 `scripts/qaihub/benchmark_qnn.py` (CSV at `/tmp/onevoice_qnn_latency.csv`).
 
-### Device matrix — PhoWhisper-base encoder (FP32 → full-INT8 QNN)
+### Device matrix — ASR encoders (FP32 → full-INT8 QNN)
 
-| Device | Chipset | Hexagon | Inference | Peak mem |
-|---|---|---|---|---|
-| Dragonwing RB3 Gen 2 Vision Kit **(target)** | qcs6490 | v68 | 230.4 ms | 17.9 MB |
-| Arduino VENTUNO Q | qcs8275 | v73 | 56.5 ms | 16.1 MB |
-| Dragonwing IQ-9075 EVK | qcs9075 | v73 | 56.2 ms | 20.0 MB |
-| QCS8550 (Proxy) | qcs8550-proxy | v73 | 71.3 ms | 143.1 MB |
-| Dragonwing Q-6690 MTP | qcm6690 | v73 | 300.6 ms | 152.9 MB |
+Inference latency (ms) / peak mem (MB), all 15 model×device pairs measured; raw
+CSV in `docs/reports/onevoice_qnn_latency.csv`.
 
-Two takeaways: (1) newer Hexagon v73 HTPs run the encoder ~4× faster than the
-target's v68, so the QCS6490 is genuinely the constrained part; (2) the target
-is the *slowest per-model* result here (230 ms) while `whisper-base` on the
-*same* QCS6490 was 63 ms — an export-quality problem, not a hardware ceiling.
+| Device | Chipset | Hexagon | phowhisper-base | whisper-base | whisper-small |
+|---|---|---|---|---|---|
+| Dragonwing RB3 Gen 2 Vision Kit **(target)** | qcs6490 | v68 | 230.4 / 17.9 | 63.0 / 17.9 | 178.4 / 20.4 |
+| Arduino VENTUNO Q | qcs8275 | v73 | 56.5 / 16.1 | 13.8 / 16.1 | 46.0 / 17.7 |
+| Dragonwing IQ-9075 EVK | qcs9075 | v73 | 56.2 / 20.0 | 15.0 / 17.9 | 43.9 / 21.6 |
+| QCS8550 (Proxy) | qcs8550-proxy | v73 | 71.3 / 143.1 | 14.1 / 126.8 | 45.2 / 171.8 |
+| Dragonwing Q-6690 MTP | qcm6690 | v73 | 300.6 / 152.9 | 139.5 / 183.9 | 462.2 / 162.8 |
+
+Takeaways:
+1. **Export quality dominates.** On the target QCS6490, `whisper-base` runs 63 ms
+   but the same-architecture `phowhisper-base` takes 230 ms (3.7×) — the PhoWhisper
+   FP32 export converts to a worse QNN graph. Re-export from `vinai/PhoWhisper-base`
+   with the `optimum`/onnx-community recipe before trusting the VI number.
+2. **Newer HTPs are ~4× faster** (v73 QCS9075/QCS8275/QCS8550 ≈ 14–15 ms for
+   whisper-base vs 63 ms on the target's v68). The QCS6490 is the constrained part.
+3. **QCM6690 is an outlier** (slower than even the QCS6490) — worth understanding
+   before treating any "v73 = fast" assumption as universal.
+4. Decoders not yet benchmarked (KV-cache static-shape compile is the harder case).
+
 
 
 ## Sources (firecrawl)
