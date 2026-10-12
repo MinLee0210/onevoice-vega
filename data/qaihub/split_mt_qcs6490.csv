@@ -1,0 +1,6 @@
+model,device,chipset,status,latency_ms,peak_mem_mb
+whisper_base_decoder_first,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,19.1,39.4
+whisper_base_decoder_past,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,9.1,39.9
+opus_mt_vi_en_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,
+opus_mt_vi_en_decoder_first,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,
+opus_mt_vi_en_decoder_past,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,

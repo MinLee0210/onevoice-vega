@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// Errors surfaced while building or running the pipeline. Stage-specific
-/// variants (denoise/VAD/ASR/MT/TTS failures) get added here as those
-/// stages move from `todo!()` stubs to real model inference.
+/// Errors surfaced while building or running the pipeline. Every stage is
+/// real now, so each ML-backed one maps its ONNX/tokenizer/audio failures
+/// onto its own variant below (`denoise` can't fail and adds none).
 #[derive(Debug, Error)]
 pub enum OneVoiceError {
     #[error("failed to read config file {path}: {source}")]

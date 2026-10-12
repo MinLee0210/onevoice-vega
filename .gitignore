@@ -232,6 +232,9 @@ src/target/
 # each stage's MANIFEST.md (what/where/how to regenerate) and the
 # top-level README.md are tracked -- see models/README.md.
 models/**/*.onnx
+models/**/*.safetensors
+models/**/*.pt
+models/**/*.pth
 models/**/*.bin
 models/**/*.qnn
 models/**/*.json

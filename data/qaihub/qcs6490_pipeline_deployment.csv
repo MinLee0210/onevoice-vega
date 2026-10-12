@@ -1,0 +1,15 @@
+stage,model,device,chipset,status,latency_ms,peak_mem_mb,note
+asr_encoder,whisper_base_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,63.0,17.9,FP32->full-INT8 QNN context binary
+asr_encoder,phowhisper_base_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,230.4,17.9,FP32->full-INT8 QNN context binary
+asr_encoder,whisper_small_encoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,178.4,20.4,FP32->full-INT8 QNN context binary
+asr_decoder_merged,whisper_base_decoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,QAIRT converter exit 255 (merged use_cache_branch If-node)
+asr_decoder_merged,phowhisper_base_decoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,QAIRT converter exit 255 (merged use_cache_branch If-node)
+asr_decoder_split,whisper_base_decoder_first,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,19.1,39.4,split non-merged export (decoder_model.onnx)
+asr_decoder_split,whisper_base_decoder_past,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,9.1,39.9,split non-merged export (decoder_with_past_model.onnx)
+asr_decoder_split,phowhisper_base_decoder_first,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,14.1,39.4,split non-merged export (decoder_model.onnx)
+asr_decoder_split,phowhisper_base_decoder_past,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,OK,8.9,37.8,split non-merged export (decoder_with_past_model.onnx)
+mt_encoder,opus_mt_vi_en_encoder_fp32,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,float attention-mask Cast unsupported on INT8-only HTP
+mt_encoder,opus_mt_vi_en_encoder_fp32_nomask,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,after mask strip: QAIRT quantizer exit 1
+mt_decoder,opus_mt_vi_en_decoder_fp32,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,same float-mask / quantizer failure
+mt_decoder,opus_mt_vi_en_decoder_fp32_nomask,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,after mask strip: QAIRT quantizer exit 1
+vad,silero_vad_fp32,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED,,,QAIRT shape inference fails on this graph (CPU-by-design; not required on NPU)

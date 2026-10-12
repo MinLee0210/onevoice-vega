@@ -24,10 +24,16 @@ use crate::error::OneVoiceError;
 
 type TermKey = (String, String, String); // (source_lang, target_lang, source_term.lowercase)
 
+/// A per-direction lookup: the Aho-Corasick automaton plus a `(source,
+/// target)` pair parallel to its pattern indices, so `find_matches` can
+/// read the target straight off the match instead of rebuilding a
+/// `TermKey` (three `String`s) per hit on the real-time path.
+type DirectionSearcher = (aho_corasick::AhoCorasick, Vec<(String, String)>);
+
 #[derive(Default)]
 pub struct Glossary {
     terms: HashMap<TermKey, String>,
-    searchers: HashMap<(String, String), (aho_corasick::AhoCorasick, Vec<String>)>,
+    searchers: HashMap<(String, String), DirectionSearcher>,
 }
 
 impl fmt::Debug for Glossary {
@@ -143,18 +149,14 @@ impl Glossary {
         let text_lower = text.to_lowercase();
         let pair_key = (source_lang.to_string(), target_lang.to_string());
 
-        if let Some((ac, source_terms)) = self.searchers.get(&pair_key) {
+        if let Some((ac, pairs)) = self.searchers.get(&pair_key) {
             let mut matches = Vec::new();
             for mat in ac.find_iter(&text_lower) {
-                let matched_source = &source_terms[mat.pattern()];
-                let term_key = (
-                    source_lang.to_string(),
-                    target_lang.to_string(),
-                    matched_source.clone(),
-                );
-                if let Some(target_term) = self.terms.get(&term_key) {
-                    matches.push((matched_source.as_str(), target_term.as_str()));
+                if !is_word_bounded(&text_lower, mat.start(), mat.end()) {
+                    continue;
                 }
+                let (source, target) = &pairs[mat.pattern()];
+                matches.push((source.as_str(), target.as_str()));
             }
             matches.sort_unstable();
             matches.dedup();
@@ -166,27 +168,48 @@ impl Glossary {
 
     /// Compiles Aho-Corasick searchers for all populated translation directions.
     fn build_searchers(&mut self) {
-        let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
-        for (sl, tl, source_term) in self.terms.keys() {
+        // Dedup by source term within each direction; a source term maps to
+        // exactly one target per direction.
+        let mut groups: HashMap<(String, String), HashMap<String, String>> = HashMap::new();
+        for ((sl, tl, source_term), target_term) in &self.terms {
             groups
                 .entry((sl.clone(), tl.clone()))
                 .or_default()
-                .push(source_term.clone());
+                .insert(source_term.clone(), target_term.clone());
         }
 
         self.searchers.clear();
-        for (pair, mut source_terms) in groups {
-            source_terms.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
-            source_terms.dedup();
+        for (pair, map) in groups {
+            let mut pairs: Vec<(String, String)> = map.into_iter().collect();
+            // Deterministic order for the pattern-index -> (source, target)
+            // mapping (LeftmostLongest picks the longest match regardless).
+            pairs.sort_unstable_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
 
-            if let Ok(ac) = aho_corasick::AhoCorasick::builder()
-                .match_kind(aho_corasick::MatchKind::LeftmostLongest)
-                .build(&source_terms)
-            {
-                self.searchers.insert(pair, (ac, source_terms));
+            let ac = {
+                let patterns: Vec<&str> = pairs.iter().map(|(s, _)| s.as_str()).collect();
+                aho_corasick::AhoCorasick::builder()
+                    .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+                    .build(&patterns)
+            };
+            if let Ok(ac) = ac {
+                self.searchers.insert(pair, (ac, pairs));
             }
         }
     }
+}
+
+/// True unless the match `text[start..end]` is immediately flanked by an
+/// ASCII alphanumeric character. Deliberately ASCII-only rather than
+/// Unicode `is_alphanumeric`: Vietnamese diacritics and CJK are letters
+/// but don't delimit words the way Latin script does, so treating them as
+/// boundary characters would break terms like "叉车" inside "大型叉车".
+/// ASCII is enough to stop a short English term ("lift") matching inside a
+/// longer word ("forklift", "shoplifting") as the termbase grows.
+fn is_word_bounded(text: &str, start: usize, end: usize) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[end..].chars().next();
+    !before.is_some_and(|c| c.is_ascii_alphanumeric())
+        && !after.is_some_and(|c| c.is_ascii_alphanumeric())
 }
 
 fn key(source_lang: &str, target_lang: &str, source_term: &str) -> TermKey {
@@ -262,6 +285,38 @@ mod tests {
 
         let no_matches = g.find_matches("vi", "en", "Xin chào, bạn khỏe không?");
         assert!(no_matches.is_empty());
+    }
+
+    #[test]
+    fn find_matches_ignores_matches_inside_a_longer_ascii_word() {
+        let mut g = Glossary::new();
+        g.insert("en", "vi", "lift", "nâng");
+
+        // "lift" inside "forklift"/"shoplifting" must not match.
+        assert!(g.find_matches("en", "vi", "forklift").is_empty());
+        assert!(g.find_matches("en", "vi", "shoplifting").is_empty());
+        // Standalone (any non-alphanumeric flank) still matches.
+        assert_eq!(
+            g.find_matches("en", "vi", "please lift now"),
+            vec![("lift", "nâng")]
+        );
+        assert_eq!(
+            g.find_matches("en", "vi", "lift-off"),
+            vec![("lift", "nâng")]
+        );
+    }
+
+    #[test]
+    fn find_matches_keeps_cjk_substrings_that_ascii_words_would_reject() {
+        // CJK has no word-delimiting spaces; a term embedded in a longer
+        // string is still a real match (the flanking char is CJK, not
+        // ASCII alphanumeric, so the word-boundary check lets it through).
+        let mut g = Glossary::new();
+        g.insert("zh", "vi", "叉车", "xe nâng");
+        assert_eq!(
+            g.find_matches("zh", "vi", "大型叉车正在靠近"),
+            vec![("叉车", "xe nâng")]
+        );
     }
 
     #[test]

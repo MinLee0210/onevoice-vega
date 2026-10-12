@@ -198,6 +198,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--keys", nargs="*", help="limit to these model keys")
     parser.add_argument("--devices", nargs="*", help="limit to these device names")
-    parser.add_argument("--csv", default="/tmp/onevoice_latency.csv")
+    parser.add_argument("--csv", default=str(common.REPO_ROOT / "data" / "onevoice_latency_devices.csv"))
     args = parser.parse_args()
     sys.exit(main(args.keys, args.devices or DEFAULT_DEVICES, Path(args.csv)))

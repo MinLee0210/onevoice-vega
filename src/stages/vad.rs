@@ -14,10 +14,31 @@ use ort::value::Tensor;
 
 use crate::audio::AudioBuffer;
 use crate::error::OneVoiceError;
+use crate::stages::session;
 
 const CHUNK_SIZE: usize = 512;
 const STATE_SHAPE: [usize; 3] = [2, 1, 128];
 const SPEECH_THRESHOLD: f32 = 0.5;
+/// Audio kept on each side of the detected speech, on top of the active
+/// (above-threshold) chunks. Silero only activates on 512-sample chunk
+/// boundaries, so trimming exactly to the first/last active chunk clips
+/// the onset/offset of the first/last phoneme — a real ASR WER cost on
+/// short commands. Silero's own reference usage pads by ~100ms; this is
+/// the reasoning behind keeping that margin rather than trimming tight.
+const SPEECH_PAD_MS: u32 = 100;
+
+/// Padded `[start, end)` sample bounds for the trimmed range, clamped to
+/// the buffer. Pure so it can be tested without a model.
+fn padded_bounds(
+    first_chunk: usize,
+    last_chunk: usize,
+    pad_samples: usize,
+    total_len: usize,
+) -> (usize, usize) {
+    let start = (first_chunk * CHUNK_SIZE).saturating_sub(pad_samples);
+    let end = (((last_chunk + 1) * CHUNK_SIZE) + pad_samples).min(total_len);
+    (start, end)
+}
 
 pub struct Vad {
     session: Session,
@@ -25,8 +46,7 @@ pub struct Vad {
 
 impl Vad {
     pub fn load(model_path: impl Into<PathBuf>) -> Result<Self, OneVoiceError> {
-        let session = Session::builder()
-            .and_then(|mut b| b.commit_from_file(model_path.into()))
+        let session = session::commit_from_file(model_path.into())
             .map_err(|source| OneVoiceError::Vad(format!("failed to load VAD model: {source}")))?;
         Ok(Self { session })
     }
@@ -44,8 +64,9 @@ impl Vad {
         };
         let last_speech = probs.iter().rposition(|&p| p > SPEECH_THRESHOLD).unwrap();
 
-        let start = first_speech * CHUNK_SIZE;
-        let end = ((last_speech + 1) * CHUNK_SIZE).min(audio.samples.len());
+        let pad_samples = (audio.sample_rate_hz as u64 * SPEECH_PAD_MS as u64 / 1000) as usize;
+        let (start, end) =
+            padded_bounds(first_speech, last_speech, pad_samples, audio.samples.len());
         Ok(AudioBuffer::new(
             audio.samples[start..end].to_vec(),
             audio.sample_rate_hz,
@@ -101,6 +122,24 @@ impl Vad {
 mod tests {
     use super::*;
 
+    #[test]
+    fn padded_bounds_adds_speech_pad_around_the_active_chunks() {
+        // Speech on chunks 5..=6, 100ms pad = 1600 samples at 16kHz.
+        let total = 20 * CHUNK_SIZE;
+        let (start, end) = padded_bounds(5, 6, 1_600, total);
+        assert_eq!(start, 5 * CHUNK_SIZE - 1_600);
+        assert_eq!(end, 7 * CHUNK_SIZE + 1_600);
+    }
+
+    #[test]
+    fn padded_bounds_clamps_to_the_buffer_edges() {
+        // Speech at the very start/end: padding must not go out of bounds.
+        let total = 5 * CHUNK_SIZE;
+        let (start, end) = padded_bounds(0, 4, 1_600, total);
+        assert_eq!(start, 0);
+        assert_eq!(end, total);
+    }
+
     /// Requires `models/vad/model.onnx` on disk (gitignored; see
     /// models/vad/MANIFEST.md) and `data/eval/vad_sample_vi.wav` (a real
     /// ~2.4s VIVOS utterance, committed as a small test fixture — see
@@ -137,10 +176,12 @@ mod tests {
             "expected silence to be trimmed off"
         );
         // Allow some slack: VAD trims to chunk boundaries and speech
-        // onset/offset isn't perfectly sharp, but it should land close
-        // to the real speech length, not the padded total.
+        // onset/offset isn't perfectly sharp, plus SPEECH_PAD_MS of margin
+        // is kept on each side -- but it should still land close to the
+        // real speech length, not the padded total.
+        let pad = sample_rate as usize / 1000 * SPEECH_PAD_MS as usize;
         assert!(
-            trimmed.samples.len() < speech.len() + CHUNK_SIZE * 4,
+            trimmed.samples.len() < speech.len() + CHUNK_SIZE * 4 + 2 * pad,
             "trimmed length {} should be close to the speech length {}",
             trimmed.samples.len(),
             speech.len()

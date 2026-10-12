@@ -67,11 +67,26 @@ environment).
 
 ## Known gotchas
 
-- The merged decoders (`*_decoder`, with 25–49 inputs and dynamic
-  KV-cache shapes) are the hard case — the same "merged decoder" that
-  `docs/decisions/onnx-runtime-merged-decoder-gotchas.md` documents. They
-  may fail to compile for QNN; a failure here is a *finding* about the
-  QCS6490 deployment path, not a bug in this harness.
+- The **merged** decoders (`*_decoder_merged`, 25–49 inputs, dynamic
+  KV-cache, `use_cache_branch` If-node) **do not compile for QNN on
+  QCS6490** — QAIRT converter exit 255. Use the **split** `decoder_model.onnx`
+  + `decoder_with_past_model.onnx` exports instead; those compile and run
+  (measured: whisper-base first 19.1 ms / past 9.1 ms). Full write-up:
+  `docs/reports/qcs6490-deployment-evaluation-2026-10.md`.
+- `--target_runtime qnn_context_binary` is **gone in SDK 0.56**; the
+  accepted values are `onnx`, `precompiled_qnn_onnx`, `qnn_dlc`, `tflite`.
+  Use `precompiled_qnn_onnx`.
+- `--truncate_64bit_io` is required for int64 token-id/mask inputs. The
+  compiled graph's int64 inputs then become **int32**, so inference inputs
+  (`common.sample_inputs`) must be int32 — otherwise profile fails with
+  "Actual: tensor(int64), expected: tensor(int32)".
+- The `setup_models.sh` bundle is dynamic-INT8 ONNX (an ORT-CPU artifact);
+  QAIRT rejects it (exit 255). NPU deployment starts from FP32 sources
+  (`benchmark_qnn.py`).
+- Opus-MT's float additive attention mask is rejected by the INT8-only
+  QCS6490 HTP, and the quantizer still fails after removing it — MT stays on
+  CPU for now (`scripts/qaihub/strip_float_attention_mask.py` documents the
+  surgery attempt).
 - Jobs run on Qualcomm's cloud and can take a few minutes each. The
   `--keys` flag lets you re-run just the interesting ones.
 

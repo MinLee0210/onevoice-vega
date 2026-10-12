@@ -29,6 +29,82 @@ The CPU-based pipeline executes under **~600-800ms** total latency (well within 
 | **TTS** | Piper VITS (VI/EN/ZH) & MMS-TTS (KO) | Active | ~120 ms (TTFA: ~90ms) |
 | **Audio I/O** | Mock Wave Reader / Writer | Active | ~10 ms (CPAL pending HW) |
 
+**Two ASR backends**, auto-selected by which artifact is in `asr_model_dir`:
+**Whisper** (PhoWhisper/Whisper-small, seq2seq) or **CTC** (`src/stages/ctc.rs`,
+`CtcAsrEngine`, single forward pass — no decoder loop). Measured on VI
+(`docs/reports/asr_ab.md`): CTC is ~6× faster in the pipeline (ASR 57 ms vs
+~360–420 ms; full cycle 181 ms vs 485 ms) but higher WER. The bundled
+`asr/vi-ctc` is an Apache-2.0 base fine-tuned on VIVOS
+(`scripts/edge/finetune_ctc_vi.py`; `docs/decisions/ctc-finetune-recipe-2026-10.md`),
+now clean 9.86% / 5 dB 23.94% on the VIVOS slice. Whisper is the default for
+accuracy; CTC is the latency-fallback. Model bundle: GitHub release
+**`models-v3`** (split into 2 parts; `scripts/setup_models.sh` reassembles).
+
+---
+
+## 🖥️ Hardware Deployment Evaluation (Qualcomm QCS6490)
+
+Every pipeline stage was deployed and profiled on the target
+**`Dragonwing RB3 Gen 2 Vision Kit`** (QCS6490, Hexagon v68 NPU) via Qualcomm
+AI Hub. Full write-ups: `docs/reports/qcs6490-deployment-evaluation-2026-10.md`,
+`docs/reports/vega-hand-air-deployment-2026-10.md`; raw metrics in `data/qaihub/`.
+
+**Key result:** the whole pipeline runs on a **single QCS6490**. Only the ASR
+network goes on the Hexagon **NPU**; MT, VAD, denoise and TTS run on the Kryo
+**CPU** of the same chip (Opus-MT does not compile to QNN). The ASR decoder
+ships as the **split** export (`decoder_model.onnx` + `decoder_with_past_model.onnx`)
+— the merged decoder's `use_cache_branch` If-node fails QNN conversion.
+
+### Per-stage placement
+
+| Stage | Hardware | Status | Inference Time | Peak Memory |
+| :--- | :--- | :---: | :---: | :---: |
+| RNNoise denoise | Kryo CPU | ✅ | ~5 ms | compiled in |
+| Silero VAD | Kryo CPU | ✅ | ~5 ms | 2.1 MB |
+| ASR encoder (PhoWhisper / Whisper-small) | Hexagon NPU | ✅ | 230 / 178 ms | 18–20 MB |
+| ASR decoder, split first/past | Hexagon NPU | ✅ | 14.1 / 8.9 ms-per-token | ~40 MB |
+| ASR decoder, merged | Hexagon NPU | ❌ | — | QAIRT exit 255 |
+| MT (Opus-MT) | Kryo CPU | ✅ (NPU ✗) | ~19 ms | ~127 MB |
+| TTS (Piper / MMS) | Kryo CPU | ✅ | ~95 ms | ~60 MB |
+
+### Proposed solutions
+
+| Solution | Hardware | Mem cost (RAM) | Storage (models) | Inference Time / cycle | Peak Memory | Status |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Vega Hand** (VI↔EN/ZH/KO, 1:1) | 1× QCS6490 (NPU+CPU) | ~2.5 GB budget | ~1.4 GB | ~485 ms | NPU ≤39 MB; CPU ~1.2 GB | ✅ deployable |
+| **Vega Air** (VI→EN/ZH/KO broadcast) | 1× QCS6490 (NPU+CPU) | ~2.0 GB budget | ~740 MB | ASR ~378 ms + MT ~19 ms + 3× TTS | NPU ≤39 MB | ✅ deployable |
+| All-CPU baseline (vi→en) | 1× QCS6490 (CPU) | ~1.2 GB measured | ~287 MB | ~541 ms | ~1.2 GB | ✅ deployable today |
+| All-NPU attempt (MT on Hexagon) | — | — | — | — | — | ❌ MT/VAD won't compile |
+
+Vega Air is a model subset of Vega Hand, so it deploys on the same hardware
+with no new NPU work. "Mem cost" is the resident working set; the all-CPU
+figure (1.18 GB) is a measured peak RSS, the others are model-size budgets.
+
+---
+
+## 🌐 Translation Coverage & MT Quality
+
+All **6 directions** (VI↔EN/ZH/KO) now translate. Direct Opus-MT models exist
+for vi-en/en-vi; the VI↔ZH and VI↔KO pairs **pivot through English**
+(`pivot = { lang = "en", ... }` in `configs/language-pairs.toml`, chained by
+`MtChain` in `src/stages/mt.rs`, glossary applied per leg).
+
+First measured MT quality (Helsinki-NLP/opus-100 test, 200 pairs, greedy) —
+full detail in `docs/reports/mt_quality.md`:
+
+| direction | path | BLEU (leg) | note |
+|---|---|---|---|
+| vi→en | direct | 29.6 | flagship pair; below the ≥40 (domain-set) target |
+| en→vi | direct | 22.2 | |
+| vi→zh | pivot | vi-en 29.6 → en-zh 46.5 | |
+| zh→vi | pivot | zh-en 44.4 → en-vi 22.2 | |
+| vi→ko | pivot | vi-en 29.6 → en-ko **0.1** | ❌ en→ko checkpoint is broken |
+| ko→vi | pivot | ko-en 15.0 → en-vi 22.2 | mediocre |
+
+**KO is the problem direction** — broken en→ko MT *and* a non-commercial KO
+TTS (MMS, CC-BY-NC). It needs a different model (e.g. M2M-100, MIT) before the
+demo. COMET not yet measured. Reproduce: `scripts/evaluate_mt.py`.
+
 ---
 
 ## 🛠️ Quickstart Setup Guide

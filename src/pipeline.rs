@@ -8,11 +8,11 @@ use std::time::Instant;
 
 use crate::config::{Config, LatencyBudgetConfig};
 use crate::error::OneVoiceError;
-use crate::stages::asr::AsrEngine;
+use crate::stages::asr::Asr;
 use crate::stages::audio_io::AudioCapture;
 use crate::stages::denoise::{self, Denoiser};
 use crate::stages::glossary::Glossary;
-use crate::stages::mt::MtEngine;
+use crate::stages::mt::MtChain;
 use crate::stages::tts::TtsEngine;
 use crate::stages::vad::Vad;
 
@@ -28,12 +28,11 @@ pub struct PipelineConfig<'a> {
 
 pub struct Pipeline {
     source_lang: String,
-    target_lang: String,
     audio_io: AudioCapture,
     denoiser: Denoiser,
     vad: Vad,
-    asr: AsrEngine,
-    mt: MtEngine,
+    asr: Asr,
+    mt: MtChain,
     glossary: Glossary,
     tts: TtsEngine,
     latency_budget: LatencyBudgetConfig,
@@ -50,9 +49,20 @@ impl Pipeline {
                 target_lang: cfg.target_lang.to_string(),
             })?;
 
+        // Direct `src→target` model, or a `src→pivot→target` chain when the
+        // pair config declares a pivot (e.g. VI→KO via EN).
+        let mt = match &pair.pivot {
+            Some(p) => MtChain::pivot(
+                cfg.models_dir.join(&pair.mt_model_dir),
+                &p.lang,
+                cfg.models_dir.join(&p.mt_model_dir),
+                &pair.target,
+            )?,
+            None => MtChain::direct(cfg.models_dir.join(&pair.mt_model_dir), &pair.target)?,
+        };
+
         Ok(Self {
             source_lang: cfg.source_lang.to_string(),
-            target_lang: cfg.target_lang.to_string(),
             // The mic must capture at RNNoise's fixed 48kHz; Denoiser
             // resamples down to 16kHz for VAD/ASR on its way out (see
             // src/stages/denoise.rs module docs).
@@ -63,8 +73,8 @@ impl Pipeline {
             ),
             denoiser: Denoiser::load(),
             vad: Vad::load(cfg.models_dir.join("vad/model.onnx"))?,
-            asr: AsrEngine::load(cfg.models_dir.join(&pair.asr_model_dir))?,
-            mt: MtEngine::load(cfg.models_dir.join(&pair.mt_model_dir))?,
+            asr: Asr::load(cfg.models_dir.join(&pair.asr_model_dir))?,
+            mt,
             glossary: Glossary::load(&cfg.data_dir.join("glossary"))?,
             // espeak-ng-data is shared across all Piper voices (vi/en/zh);
             // ignored by the MMS (ko) backend -- see src/stages/tts.rs.
@@ -78,15 +88,24 @@ impl Pipeline {
 
     /// Runs one PTT press-release cycle end to end. Times each stage —
     /// this is the "button-release -> first audio" latency AGENTS.md
-    /// targets at ≤1.2s, *excluding* one-time model loading in `new()`.
-    /// Measured on whatever CPU this binary runs on, not the Hexagon
-    /// NPU target hardware — see the logged warning every run emits.
+    /// targets at ≤1.2s, *excluding* one-time model loading in `new()`
+    /// and the pre-release capture (see the `release_start` comment
+    /// below). Measured on whatever CPU this binary runs on, not the
+    /// Hexagon NPU target hardware — see the logged warning every run
+    /// emits.
     pub fn run_once(&mut self) -> Result<(), OneVoiceError> {
-        let cycle_start = Instant::now();
-
+        // Capture happens *before* the button is released, so it is not
+        // part of the "button-release -> first audio" target (AGENTS.md ->
+        // Latency target). It's still timed for reporting, but every
+        // latency number below is anchored at `release_start` -- the moment
+        // capture returns -- because on real PTT hardware capture blocks
+        // for the whole utterance (seconds), which would otherwise dwarf
+        // the actual post-release budget.
         let t = Instant::now();
         let raw = self.audio_io.capture_on_ptt()?;
         let capture_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        let release_start = Instant::now();
 
         let t = Instant::now();
         let denoised = self.denoiser.process(raw);
@@ -114,9 +133,7 @@ impl Pipeline {
         tracing::info!(text = %utterance.text, lang = %utterance.lang, "ASR");
 
         let t = Instant::now();
-        let translation = self
-            .mt
-            .translate(&utterance, &self.target_lang, &self.glossary)?;
+        let translation = self.mt.translate(&utterance, &self.glossary)?;
         let mt_ms = t.elapsed().as_secs_f64() * 1000.0;
         tracing::info!(text = %translation.text, lang = %translation.lang, "MT");
 
@@ -126,7 +143,7 @@ impl Pipeline {
             vad_ms = format!("{vad_ms:.1}"),
             asr_ms = format!("{asr_ms:.1}"),
             mt_ms = format!("{mt_ms:.1}"),
-            through_mt_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
+            through_mt_ms = format!("{:.1}", release_start.elapsed().as_secs_f64() * 1000.0),
             "latency through MT (CPU dev machine, NOT the Hexagon NPU target -- see AGENTS.md -> Latency target; TTS timed separately below)"
         );
 
@@ -136,7 +153,7 @@ impl Pipeline {
         tracing::info!(
             tts_first_chunk_ms = format!("{tts_first_chunk_ms:.1}"),
             tts_total_ms = format!("{tts_ms:.1}"),
-            through_tts_ms = format!("{:.1}", cycle_start.elapsed().as_secs_f64() * 1000.0),
+            through_tts_ms = format!("{:.1}", release_start.elapsed().as_secs_f64() * 1000.0),
             "TTS chunked (through_tts_ms is the full button-release -> synthesized-audio latency AGENTS.md targets at <=1.2s)"
         );
 
@@ -144,8 +161,13 @@ impl Pipeline {
         self.audio_io.play(&audio_out)?;
         let play_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+        // Device-I/O duration, informational only. With the file-based
+        // stand-in this is file read + write; on real hardware `capture_ms`
+        // is the pre-release utterance and `play()` is streamed playback,
+        // neither of which is post-release latency, so this budget check is
+        // a proxy and may warn on-device by design.
         let io_overhead_ms = capture_ms + play_ms;
-        let total_ms = cycle_start.elapsed().as_secs_f64() * 1000.0;
+        let total_ms = release_start.elapsed().as_secs_f64() * 1000.0;
 
         // Latency budget checks
         let budget = self.latency_budget;

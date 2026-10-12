@@ -74,6 +74,7 @@ use uroman::{rom_format, Uroman};
 
 use crate::audio::{AudioBuffer, Translation};
 use crate::error::OneVoiceError;
+use crate::stages::session;
 
 /// Env var `espeak-rs` (pulled in by `piper-rs`) reads to find its
 /// `espeak-ng-data` directory — see that crate's `locate_espeak_data()`.
@@ -142,11 +143,9 @@ impl TtsEngine {
                 ))
             })?;
 
-            let session = Session::builder()
-                .and_then(|mut b| b.commit_from_file(&onnx_path))
-                .map_err(|source| {
-                    OneVoiceError::Tts(format!("failed to load {}: {source}", onnx_path.display()))
-                })?;
+            let session = session::commit_from_file(&onnx_path).map_err(|source| {
+                OneVoiceError::Tts(format!("failed to load {}: {source}", onnx_path.display()))
+            })?;
 
             Backend::Mms {
                 session,

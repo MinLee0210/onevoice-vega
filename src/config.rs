@@ -8,6 +8,19 @@ use serde::Deserialize;
 
 use crate::error::OneVoiceError;
 
+/// Optional machine-translation pivot: when a direct `src→target` model
+/// doesn't exist (e.g. VI→KO), the pipeline chains `src→pivot→target`
+/// through a high-resource language. `mt_model_dir` on the pair becomes the
+/// `src→pivot` leg and `pivot.mt_model_dir` is the `pivot→target` leg.
+#[derive(Debug, Deserialize)]
+pub struct PivotSpec {
+    /// The pivot language code, e.g. `"en"`.
+    pub lang: String,
+    /// Directory containing the `pivot→target` MT model (same layout as
+    /// `LanguagePair::mt_model_dir`).
+    pub mt_model_dir: PathBuf,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LanguagePair {
     pub source: String,
@@ -15,7 +28,8 @@ pub struct LanguagePair {
     /// Directory containing `tokenizer.json`, `encoder_model.onnx`, and
     /// `decoder_model_merged.onnx` (see models/README.md).
     pub asr_model_dir: PathBuf,
-    /// Same shape as `asr_model_dir` (see models/README.md).
+    /// Same shape as `asr_model_dir` (see models/README.md). With a `pivot`,
+    /// this is the `source→pivot` leg instead of `source→target`.
     pub mt_model_dir: PathBuf,
     /// Directory holding the TTS voice for this pair's *target* language
     /// (see models/tts/<lang>/MANIFEST.md). A directory, not a single
@@ -24,6 +38,9 @@ pub struct LanguagePair {
     /// the `.onnx` + its tokenizer files. Several pairs can share one dir
     /// (e.g. en→vi, zh→vi, ko→vi all use `tts/vi`).
     pub tts_model_dir: PathBuf,
+    /// Present when this pair translates via a pivot (see [`PivotSpec`]).
+    #[serde(default)]
+    pub pivot: Option<PivotSpec>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +113,35 @@ mod tests {
         let cfg: LanguagePairsConfig = toml::from_str(raw).unwrap();
         assert!(cfg.find("vi", "en").is_some());
         assert!(cfg.find("vi", "zh").is_none());
+    }
+
+    #[test]
+    fn parses_pair_with_en_pivot() {
+        let raw = r#"
+            [[pair]]
+            source = "vi"
+            target = "zh"
+            asr_model_dir = "asr/vi"
+            mt_model_dir = "mt/vi-en"
+            tts_model_dir = "tts/zh"
+            pivot = { lang = "en", mt_model_dir = "mt/en-zh" }
+        "#;
+        let cfg: LanguagePairsConfig = toml::from_str(raw).unwrap();
+        let p = cfg.find("vi", "zh").unwrap();
+        let pivot = p.pivot.as_ref().expect("pivot should parse");
+        assert_eq!(pivot.lang, "en");
+        assert_eq!(pivot.mt_model_dir, PathBuf::from("mt/en-zh"));
+        // A pair without a pivot parses with `pivot = None`.
+        let raw2 = r#"
+            [[pair]]
+            source = "vi"
+            target = "en"
+            asr_model_dir = "asr/vi"
+            mt_model_dir = "mt/vi-en"
+            tts_model_dir = "tts/en"
+        "#;
+        let cfg2: LanguagePairsConfig = toml::from_str(raw2).unwrap();
+        assert!(cfg2.find("vi", "en").unwrap().pivot.is_none());
     }
 
     #[test]

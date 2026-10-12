@@ -176,17 +176,25 @@ def sample_inputs(entry: dict, model_path: Path) -> dict[str, list[np.ndarray]]:
 
     model = onnx.load(str(model_path))
     specs = input_specs_for(entry, model_path)
-    dtype_map = {1: np.float32, 7: np.int64, 9: np.bool_, 11: np.float64}
+    # int64 -> int32: the QCS6490 compile path passes --truncate_64bit_io
+    # (mandatory for int64 token-id / mask inputs), which makes the
+    # *compiled* graph's int64 inputs int32. The compile input_specs above
+    # stay int64 (pre-truncation); only the inference inputs follow the
+    # compiled graph, or the profile job errors "Actual: tensor(int64),
+    # expected: tensor(int32)".
+    dtype_map = {1: np.float32, 7: np.int32, 9: np.bool_, 11: np.float64}
     out: dict[str, list[np.ndarray]] = {}
     for inp in model.graph.input:
         name = inp.name
-        dt = dtype_map.get(inp.type.tensor_type.elem_type, np.float32)
+        elem = inp.type.tensor_type.elem_type
+        dt = dtype_map.get(elem, np.float32)
+        is_int = elem == 7  # original ONNX int64 scalar (e.g. Silero `sr`)
         ndim = len(inp.type.tensor_type.shape.dim)
         scalar = ndim == 0 or (name in specs and not _spec_shape(specs[name]))
         if scalar:
-            # rank-0 scalar (e.g. Silero VAD's `sr`): feed as a 1-element
-            # array so the dataset/calibration path (h5py) accepts it.
-            arr = np.array([16000 if dt == np.int64 else 0], dtype=dt)
+            # rank-0 scalar: feed as a 1-element array so the dataset /
+            # calibration path (h5py) accepts it.
+            arr = np.array([16000 if is_int else 0], dtype=dt)
         elif name in specs:
             arr = np.zeros(_spec_shape(specs[name]), dtype=dt)
         else:

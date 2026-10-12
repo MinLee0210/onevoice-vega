@@ -42,6 +42,12 @@ impl Denoiser {
             "Denoiser expects {INPUT_SAMPLE_RATE_HZ}Hz input (RNNoise's fixed internal rate)"
         );
 
+        // Each PTT cycle is an independent utterance, so reset RNNoise's
+        // recurrent state — otherwise the previous utterance's noise
+        // profile bleeds into this one. The state stays a field only to
+        // reuse the allocation across cycles.
+        self.state = DenoiseState::new();
+
         let mut denoised = Vec::with_capacity(audio.samples.len());
         let mut out_frame = [0.0f32; FRAME_SIZE];
         let mut first_frame = true;

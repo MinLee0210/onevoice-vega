@@ -1,8 +1,16 @@
 //! ASR encoder/decoder inference via `ort` (ONNX Runtime), greedy
-//! (beam=1) decode — same merged-decoder KV-cache pattern as `mt`, see
-//! that module's doc comment for the two ONNX Runtime gotchas that
-//! apply here too (cross-attention KV only valid on step 0; execution
-//! provider matters for zero-length tensors).
+//! (beam=1) decode — same KV-cache pattern as `mt`, see that module's doc
+//! comment for the two ONNX Runtime gotchas that apply here too
+//! (cross-attention KV only valid on step 0; execution provider matters for
+//! zero-length tensors).
+//!
+//! `Decoder` supports two interchangeable decoder exports: the merged graph
+//! (`decoder_model_merged.onnx`) and the split pair (`decoder_model.onnx` +
+//! `decoder_with_past_model.onnx`). Split is preferred when present because
+//! it compiles to a Hexagon QNN context binary on QCS6490 while the merged
+//! graph's `use_cache_branch` If-node does not (see
+//! docs/reports/qcs6490-deployment-evaluation-2026-10.md); both produce the
+//! same transcription on CPU.
 //!
 //! Unlike MT's tokenizer, Whisper needs a real signal-processing step
 //! before the ONNX encoder: a log-mel spectrogram, computed here with
@@ -33,6 +41,8 @@
 //! latency concern against AGENTS.md's ≤1.2s target — not yet measured
 //! on real hardware, see docs/TODO.md.
 
+use std::path::{Path, PathBuf};
+
 use ndarray::{Array2, ArrayD};
 use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
@@ -43,6 +53,7 @@ use mel_spec::prelude::{BatchLogMelConfig, BatchLogMelSpectrogram};
 use crate::audio::{AudioBuffer, Utterance};
 use crate::error::OneVoiceError;
 use crate::stages::seq2seq::{self, DecoderSpec, LayerCache};
+use crate::stages::session;
 
 const SAMPLE_RATE_HZ: u32 = 16_000;
 const N_FFT: usize = 400;
@@ -84,18 +95,71 @@ fn language_token_id(lang: &str) -> Result<i64, OneVoiceError> {
     }
 }
 
+/// The decoder graph(s). Two interchangeable exports of the same weights:
+///
+/// * `Merged` — one graph with a `use_cache_branch` input (the current
+///   default; what `setup_models.sh` ships). Runs ORT/CPU fine.
+/// * `Split` — `decoder_model.onnx` (first step) + `decoder_with_past_model.onnx`
+///   (cached steps). This is the export that compiles to a QNN context binary
+///   for the Hexagon NPU — the merged graph's `use_cache_branch` If-node does
+///   not (see docs/reports/qcs6490-deployment-evaluation-2026-10.md).
+///
+/// `AsrEngine::load` picks `Split` when both split files are present in the
+/// model dir, otherwise falls back to `Merged`, so both artifacts work.
+enum Decoder {
+    Merged(Session),
+    Split { first: Session, past: Session },
+}
+
+impl Decoder {
+    fn from_model_dir(model_dir: &Path) -> Result<Self, OneVoiceError> {
+        let first_path = model_dir.join("decoder_model.onnx");
+        let past_path = model_dir.join("decoder_with_past_model.onnx");
+        if first_path.exists() && past_path.exists() {
+            Ok(Decoder::Split {
+                first: session::commit_from_file(&first_path).map_err(|source| {
+                    OneVoiceError::Asr(format!("failed to load {}: {source}", first_path.display()))
+                })?,
+                past: session::commit_from_file(&past_path).map_err(|source| {
+                    OneVoiceError::Asr(format!("failed to load {}: {source}", past_path.display()))
+                })?,
+            })
+        } else {
+            let merged_path = model_dir.join("decoder_model_merged.onnx");
+            Ok(Decoder::Merged(
+                session::commit_from_file(&merged_path).map_err(|source| {
+                    OneVoiceError::Asr(format!(
+                        "failed to load {}: {source}",
+                        merged_path.display()
+                    ))
+                })?,
+            ))
+        }
+    }
+
+    fn spec(&self) -> Result<DecoderSpec, String> {
+        match self {
+            Decoder::Merged(session) | Decoder::Split { first: session, .. } => {
+                DecoderSpec::from_session(session)
+            }
+        }
+    }
+}
+
 pub struct AsrEngine {
     tokenizer: Tokenizer,
     encoder: Session,
-    decoder: Session,
+    decoder: Decoder,
     mel: BatchLogMelSpectrogram,
     spec: DecoderSpec,
 }
 
 impl AsrEngine {
     /// `model_dir` is a directory containing `tokenizer.json`,
-    /// `encoder_model.onnx`, and `decoder_model_merged.onnx` (see
-    /// models/README.md and models/asr/vi/MANIFEST.md).
+    /// `encoder_model.onnx`, and either the merged decoder
+    /// (`decoder_model_merged.onnx`) or the split pair
+    /// (`decoder_model.onnx` + `decoder_with_past_model.onnx`) — see
+    /// models/README.md and models/asr/vi/MANIFEST.md.
     pub fn load(model_dir: impl Into<std::path::PathBuf>) -> Result<Self, OneVoiceError> {
         let model_dir = model_dir.into();
 
@@ -104,19 +168,12 @@ impl AsrEngine {
                 OneVoiceError::Asr(format!("failed to load tokenizer.json: {source}"))
             })?;
 
-        let encoder = Session::builder()
-            .and_then(|mut b| b.commit_from_file(model_dir.join("encoder_model.onnx")))
-            .map_err(|source| {
+        let encoder =
+            session::commit_from_file(model_dir.join("encoder_model.onnx")).map_err(|source| {
                 OneVoiceError::Asr(format!("failed to load encoder_model.onnx: {source}"))
             })?;
 
-        let decoder = Session::builder()
-            .and_then(|mut b| b.commit_from_file(model_dir.join("decoder_model_merged.onnx")))
-            .map_err(|source| {
-                OneVoiceError::Asr(format!(
-                    "failed to load decoder_model_merged.onnx: {source}"
-                ))
-            })?;
+        let decoder = Decoder::from_model_dir(&model_dir)?;
 
         let mel_config = BatchLogMelConfig {
             sample_rate: SAMPLE_RATE_HZ as usize,
@@ -141,7 +198,7 @@ impl AsrEngine {
         // Derived from the decoder graph, not hardcoded: PhoWhisper-base is
         // 6 layers / 8 heads, Whisper-small is 12 layers / 12 heads (see
         // `seq2seq::DecoderSpec`).
-        let spec = DecoderSpec::from_session(&decoder).map_err(OneVoiceError::Asr)?;
+        let spec = decoder.spec().map_err(OneVoiceError::Asr)?;
 
         Ok(Self {
             tokenizer,
@@ -251,7 +308,8 @@ impl AsrEngine {
         encoder_hidden_states: &ArrayD<f32>,
         lang_token: i64,
     ) -> Result<Vec<u32>, OneVoiceError> {
-        let mut cache: Vec<LayerCache> = (0..self.spec.num_layers)
+        let num_layers = self.spec.num_layers;
+        let mut cache: Vec<LayerCache> = (0..num_layers)
             .map(|_| LayerCache::empty(&self.spec))
             .collect();
         let mut current_input_ids = vec![
@@ -263,16 +321,44 @@ impl AsrEngine {
         let mut generated = Vec::new();
 
         for step in 0..MAX_NEW_TOKENS {
-            let feeds = self.build_decoder_feeds(
-                &current_input_ids,
-                step > 0,
-                encoder_hidden_states,
-                &cache,
-            )?;
-
-            let outputs = self.decoder.run(feeds).map_err(|source| {
-                OneVoiceError::Asr(format!("decoder inference failed at step {step}: {source}"))
-            })?;
+            // Merged: one graph, `use_cache_branch` flips after step 0.
+            // Split: step 0 through the no-cache `first` graph (the whole
+            // prompt); later steps through `past` with the KV cache. Both
+            // feed `current_input_ids`, which is the full prompt on step 0
+            // and the last generated token thereafter.
+            let outputs = match &mut self.decoder {
+                Decoder::Merged(session) => {
+                    let feeds = build_merged_feeds(
+                        num_layers,
+                        &current_input_ids,
+                        step > 0,
+                        encoder_hidden_states,
+                        &cache,
+                    )?;
+                    session.run(feeds).map_err(|source| {
+                        OneVoiceError::Asr(format!(
+                            "decoder inference failed at step {step}: {source}"
+                        ))
+                    })?
+                }
+                Decoder::Split { first, past } => {
+                    if step == 0 {
+                        let feeds = build_first_feeds(&current_input_ids, encoder_hidden_states)?;
+                        first.run(feeds).map_err(|source| {
+                            OneVoiceError::Asr(format!(
+                                "decoder(first) inference failed at step {step}: {source}"
+                            ))
+                        })?
+                    } else {
+                        let feeds = build_past_feeds(current_input_ids[0], &cache)?;
+                        past.run(feeds).map_err(|source| {
+                            OneVoiceError::Asr(format!(
+                                "decoder(past) inference failed at step {step}: {source}"
+                            ))
+                        })?
+                    }
+                }
+            };
 
             let (shape, logits) =
                 outputs["logits"]
@@ -303,52 +389,104 @@ impl AsrEngine {
             current_input_ids = vec![next_id];
         }
 
-        Ok(generated)
-    }
-
-    fn build_decoder_feeds<'a>(
-        &self,
-        input_ids: &[i64],
-        use_cache: bool,
-        encoder_hidden_states: &ArrayD<f32>,
-        cache: &[LayerCache],
-    ) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
-        let mut feeds = Vec::with_capacity(3 + self.spec.num_layers * 4);
-
-        feeds.push((
-            "input_ids".to_string(),
-            tensor_input(([1usize, input_ids.len()], input_ids.to_vec()))?,
-        ));
-        feeds.push((
-            "encoder_hidden_states".to_string(),
-            tensor_input(encoder_hidden_states.clone())?,
-        ));
-        feeds.push((
-            "use_cache_branch".to_string(),
-            tensor_input(([1usize], vec![use_cache]))?,
-        ));
-
-        for (i, layer) in cache.iter().enumerate() {
-            feeds.push((
-                format!("past_key_values.{i}.decoder.key"),
-                tensor_input(layer.decoder_key.clone())?,
-            ));
-            feeds.push((
-                format!("past_key_values.{i}.decoder.value"),
-                tensor_input(layer.decoder_value.clone())?,
-            ));
-            feeds.push((
-                format!("past_key_values.{i}.encoder.key"),
-                tensor_input(layer.encoder_key.clone())?,
-            ));
-            feeds.push((
-                format!("past_key_values.{i}.encoder.value"),
-                tensor_input(layer.encoder_value.clone())?,
-            ));
+        // Hitting the cap means the loop never saw EOS: a long utterance was
+        // silently cut off. Warn so it shows up in telemetry rather than as
+        // a mysteriously short transcript.
+        if generated.len() == MAX_NEW_TOKENS {
+            tracing::warn!(
+                max_new_tokens = MAX_NEW_TOKENS,
+                "ASR decode hit the max-new-tokens cap — transcript may be truncated"
+            );
         }
 
-        Ok(feeds)
+        Ok(generated)
     }
+}
+
+/// Feeds for the merged decoder: `use_cache_branch` selects no-cache (step 0)
+/// vs cached (later steps) inside the one graph.
+fn build_merged_feeds<'a>(
+    num_layers: usize,
+    input_ids: &[i64],
+    use_cache: bool,
+    encoder_hidden_states: &ArrayD<f32>,
+    cache: &[LayerCache],
+) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
+    let mut feeds = Vec::with_capacity(3 + num_layers * 4);
+    feeds.push((
+        "input_ids".to_string(),
+        tensor_input(([1usize, input_ids.len()], input_ids.to_vec()))?,
+    ));
+    feeds.push((
+        "encoder_hidden_states".to_string(),
+        tensor_input(encoder_hidden_states.clone())?,
+    ));
+    feeds.push((
+        "use_cache_branch".to_string(),
+        tensor_input(([1usize], vec![use_cache]))?,
+    ));
+    push_past_feeds(&mut feeds, cache)?;
+    Ok(feeds)
+}
+
+/// Feeds for the split `first` decoder (step 0): the prompt plus the encoder
+/// hidden states; no cache inputs.
+fn build_first_feeds<'a>(
+    input_ids: &[i64],
+    encoder_hidden_states: &ArrayD<f32>,
+) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
+    let feeds = vec![
+        (
+            "input_ids".to_string(),
+            tensor_input(([1usize, input_ids.len()], input_ids.to_vec()))?,
+        ),
+        (
+            "encoder_hidden_states".to_string(),
+            tensor_input(encoder_hidden_states.clone())?,
+        ),
+    ];
+    Ok(feeds)
+}
+
+/// Feeds for the split `past` decoder (steps > 0): one token plus the full
+/// KV cache (self- and cross-attention; the cross-attention KV captured on
+/// step 0 is fed back, not recomputed).
+fn build_past_feeds<'a>(
+    next_id: i64,
+    cache: &[LayerCache],
+) -> Result<Vec<(String, SessionInputValue<'a>)>, OneVoiceError> {
+    let mut feeds = Vec::with_capacity(1 + cache.len() * 4);
+    feeds.push((
+        "input_ids".to_string(),
+        tensor_input(([1usize, 1usize], vec![next_id]))?,
+    ));
+    push_past_feeds(&mut feeds, cache)?;
+    Ok(feeds)
+}
+
+fn push_past_feeds<'a>(
+    feeds: &mut Vec<(String, SessionInputValue<'a>)>,
+    cache: &[LayerCache],
+) -> Result<(), OneVoiceError> {
+    for (i, layer) in cache.iter().enumerate() {
+        feeds.push((
+            format!("past_key_values.{i}.decoder.key"),
+            tensor_input(layer.decoder_key.clone())?,
+        ));
+        feeds.push((
+            format!("past_key_values.{i}.decoder.value"),
+            tensor_input(layer.decoder_value.clone())?,
+        ));
+        feeds.push((
+            format!("past_key_values.{i}.encoder.key"),
+            tensor_input(layer.encoder_key.clone())?,
+        ));
+        feeds.push((
+            format!("past_key_values.{i}.encoder.value"),
+            tensor_input(layer.encoder_value.clone())?,
+        ));
+    }
+    Ok(())
 }
 
 /// PyTorch's `torch.stft(center=True)` (what Whisper actually uses) pads
@@ -370,6 +508,41 @@ where
     D: ort::value::OwnedTensorArrayData<T>,
 {
     seq2seq::tensor_input(data).map_err(OneVoiceError::Asr)
+}
+
+/// ASR backend selector. Whisper (seq2seq, KV-cache autoregressive decode) or
+/// CTC (single forward pass + greedy decode — see `ctc.rs`). Chosen by which
+/// artifact is in the model dir: `model.onnx` → CTC; otherwise the Whisper
+/// `encoder_model.onnx` + decoder pair. So the backend is selected purely by
+/// `configs/language-pairs.toml`'s `asr_model_dir`.
+// The two engines differ in size (Whisper carries more state); one instance
+// lives for the whole process, so the enum-size lint is noise here.
+#[allow(clippy::large_enum_variant)]
+pub enum Asr {
+    Whisper(AsrEngine),
+    Ctc(crate::stages::ctc::CtcAsrEngine),
+}
+
+impl Asr {
+    pub fn load(model_dir: impl Into<PathBuf>) -> Result<Self, OneVoiceError> {
+        let dir = model_dir.into();
+        if dir.join("model.onnx").exists() {
+            Ok(Asr::Ctc(crate::stages::ctc::CtcAsrEngine::load(dir)?))
+        } else {
+            Ok(Asr::Whisper(AsrEngine::load(dir)?))
+        }
+    }
+
+    pub fn transcribe(
+        &mut self,
+        audio: &AudioBuffer,
+        lang: &str,
+    ) -> Result<Utterance, OneVoiceError> {
+        match self {
+            Asr::Whisper(engine) => engine.transcribe(audio, lang),
+            Asr::Ctc(engine) => engine.transcribe(audio, lang),
+        }
+    }
 }
 
 #[cfg(test)]

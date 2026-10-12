@@ -1,0 +1,3 @@
+model,device,chipset,status,latency_ms,peak_mem_mb
+phowhisper_base_decoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,
+whisper_base_decoder,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,

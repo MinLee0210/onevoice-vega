@@ -4,9 +4,11 @@
 
 pub mod asr;
 pub mod audio_io;
+pub mod ctc;
 pub mod denoise;
 pub mod glossary;
 pub mod mt;
 pub mod seq2seq;
+pub mod session;
 pub mod tts;
 pub mod vad;

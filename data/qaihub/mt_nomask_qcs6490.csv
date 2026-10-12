@@ -1,0 +1,4 @@
+model,device,chipset,status,latency_ms,peak_mem_mb
+opus_mt_vi_en_encoder_nomask,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,
+opus_mt_vi_en_decoder_first_nomask,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,
+opus_mt_vi_en_decoder_past_nomask,Dragonwing RB3 Gen 2 Vision Kit,qualcomm-qcs6490,COMPILE_FAILED:FAILED,,

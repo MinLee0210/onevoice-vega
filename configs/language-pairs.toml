@@ -7,51 +7,59 @@
 # the *target* language's voice (what the device speaks), so several
 # pairs share one (en->vi, zh->vi, ko->vi all use tts/vi).
 #
-# Status (2026-07-16): ASR models exist for all directions (asr/vi covers
-# VI; asr/en-zh-ko covers EN/ZH/KO). TTS voices exist for all 4 languages
-# (validated in experiments/04_tts.ipynb). MT is only exported for vi-en
-# so far -- the other 5 mt_model_dir entries are the intended wiring, not
-# yet populated (see docs/TODO.md); requesting one of those pairs will
-# fail to load until its MT model lands.
+# Pivot: VI<->ZH and VI<->KO have no direct Opus-MT model, so those pairs
+# chain through English (`pivot = { lang = "en", mt_model_dir = ... }`).
+# Here `mt_model_dir` is the source->pivot leg and `pivot.mt_model_dir` is
+# the pivot->target leg; `MtChain` runs both and the glossary applies per
+# leg. Direct pairs (vi-en, en-vi) omit `pivot`.
+#
+# MT model status (2026-10-12): all pivot legs exported --
+#   vi-en, en-vi (optimum), en-zh, zh-en, ko-en, en-ko (optimum).
+# ASR models exist for all directions (asr/vi covers VI;
+# asr/en-zh-ko covers EN/ZH/KO). TTS voices exist for all 4 languages.
 
 [[pair]]
 source = "vi"
 target = "en"
 asr_model_dir = "asr/vi"
-mt_model_dir = "mt/vi-en"      # exported, validated end-to-end
+mt_model_dir = "mt/vi-en"
 tts_model_dir = "tts/en"
 
 [[pair]]
 source = "en"
 target = "vi"
 asr_model_dir = "asr/en-zh-ko"
-mt_model_dir = "mt/en-vi"      # not exported yet
+mt_model_dir = "mt/en-vi"
 tts_model_dir = "tts/vi"
 
 [[pair]]
 source = "vi"
 target = "zh"
 asr_model_dir = "asr/vi"
-mt_model_dir = "mt/vi-zh"      # not exported yet
+mt_model_dir = "mt/vi-en"
 tts_model_dir = "tts/zh"
+pivot = { lang = "en", mt_model_dir = "mt/en-zh" }
 
 [[pair]]
 source = "zh"
 target = "vi"
 asr_model_dir = "asr/en-zh-ko"
-mt_model_dir = "mt/zh-vi"      # not exported yet
+mt_model_dir = "mt/zh-en"
 tts_model_dir = "tts/vi"
+pivot = { lang = "en", mt_model_dir = "mt/en-vi" }
 
 [[pair]]
 source = "vi"
 target = "ko"
 asr_model_dir = "asr/vi"
-mt_model_dir = "mt/vi-ko"      # not exported yet
+mt_model_dir = "mt/vi-en"
 tts_model_dir = "tts/ko"
+pivot = { lang = "en", mt_model_dir = "mt/en-ko" }
 
 [[pair]]
 source = "ko"
 target = "vi"
 asr_model_dir = "asr/en-zh-ko"
-mt_model_dir = "mt/ko-vi"      # not exported yet
+mt_model_dir = "mt/ko-en"
 tts_model_dir = "tts/vi"
+pivot = { lang = "en", mt_model_dir = "mt/en-vi" }

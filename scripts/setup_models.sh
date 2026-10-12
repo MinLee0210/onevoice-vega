@@ -42,8 +42,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 DEFAULT_MODELS_REPO="MinLee0210/OneVoice_2026"
-DEFAULT_MODELS_TAG="models-v2"
-BUNDLE_NAME="onevoice_models_v2.tar.gz"
+DEFAULT_MODELS_TAG="models-v3"
+BUNDLE_NAME="onevoice_models_v3.tar.gz"
 PYTHON="${ONEVOICE_HF_PYTHON:-python3}"
 
 # ---------------------------------------------------------------------------
@@ -78,12 +78,23 @@ download_bundle() {
             exit 1
         fi
         echo "downloading model bundle (gh): $repo release $tag ($BUNDLE_NAME)"
-        if ! gh release download "$tag" --repo "$repo" --pattern "$BUNDLE_NAME" --output "$archive" --clobber; then
+        if ! gh release download "$tag" --repo "$repo" --pattern "${BUNDLE_NAME}*" --dir "$tmp" --clobber; then
             rm -rf "$tmp"
             echo "error: 'gh release download' failed." >&2
             echo "  - is the release published? (scripts/pack_models.sh prints the create command)" >&2
             echo "  - are you 'gh auth login'-ed with access to $repo?" >&2
             echo "  - or rebuild from source: scripts/setup_models.sh rebuild" >&2
+            exit 1
+        fi
+        # The bundle is split into <2GB parts (GitHub asset limit); reassemble.
+        if compgen -G "$tmp/${BUNDLE_NAME}.part-*" > /dev/null; then
+            echo "reassembling split bundle parts ..."
+            cat "$tmp/${BUNDLE_NAME}".part-* > "$archive"
+        elif [ -f "$tmp/$BUNDLE_NAME" ]; then
+            mv "$tmp/$BUNDLE_NAME" "$archive"
+        else
+            rm -rf "$tmp"
+            echo "error: downloaded no ${BUNDLE_NAME} (or parts) from $repo@$tag" >&2
             exit 1
         fi
     fi
@@ -119,6 +130,11 @@ PYEOF
 }
 
 download_asr() {
+    # The ASR decoder ships as the *split* pair (decoder_model +
+    # decoder_with_past_model), not the merged decoder: the merged graph's
+    # use_cache_branch If-node does not compile to a QNN context binary on
+    # QCS6490, while the split pair does (and also runs fine on CPU via ORT).
+    # AsrEngine auto-detects split vs merged, so old bundles still work.
     echo "=== asr/vi ==="
     mkdir -p models/asr/vi
     "$PYTHON" - <<'PYEOF'
@@ -127,7 +143,8 @@ import shutil
 repo = "huuquyet/PhoWhisper-base"
 files = {
     "onnx/encoder_model_quantized.onnx": "encoder_model.onnx",
-    "onnx/decoder_model_merged_quantized.onnx": "decoder_model_merged.onnx",
+    "onnx/decoder_model_quantized.onnx": "decoder_model.onnx",
+    "onnx/decoder_with_past_model_quantized.onnx": "decoder_with_past_model.onnx",
     "tokenizer.json": "tokenizer.json",
     "preprocessor_config.json": "preprocessor_config.json",
     "generation_config.json": "generation_config.json",
@@ -146,7 +163,8 @@ import shutil
 repo = "onnx-community/whisper-small"
 files = {
     "onnx/encoder_model_quantized.onnx": "encoder_model.onnx",
-    "onnx/decoder_model_merged_quantized.onnx": "decoder_model_merged.onnx",
+    "onnx/decoder_model_quantized.onnx": "decoder_model.onnx",
+    "onnx/decoder_with_past_model_quantized.onnx": "decoder_with_past_model.onnx",
     "tokenizer.json": "tokenizer.json",
     "preprocessor_config.json": "preprocessor_config.json",
     "generation_config.json": "generation_config.json",

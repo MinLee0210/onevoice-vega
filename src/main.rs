@@ -24,8 +24,8 @@ use pipeline::{Pipeline, PipelineConfig};
 /// industrial environments. See AGENTS.md for the full project spec.
 ///
 /// Runs one push-to-talk cycle: reads `input_wav`, denoises, trims
-/// silence, transcribes, translates, and (once TTS lands) synthesizes
-/// and writes `output_wav`. Live mic/speaker capture isn't wired up yet
+/// silence, transcribes, translates, synthesizes, and writes
+/// `output_wav`. Live mic/speaker capture isn't wired up yet
 /// (see src/stages/audio_io.rs) -- both args are WAV file paths for now.
 #[derive(Parser)]
 #[command(version, about)]

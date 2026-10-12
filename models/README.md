@@ -19,7 +19,10 @@ models/
 ├── denoise/   no model file — RNNoise's weights are compiled into the
 │              `nnnoiseless` Rust crate, see denoise/MANIFEST.md
 ├── vad/
-├── asr/       one subfolder per language (vi/, en-zh-ko/, ...)
+├── asr/       one subfolder per language (vi/, en-zh-ko/, ...); a Whisper
+│              dir has encoder/decoder ONNX, a CTC dir (e.g. vi-ctc/) has a
+│              single model.onnx + vocab.json — `Asr::load` picks the engine
+│              from that.
 ├── mt/        one subfolder per language pair (vi-en/, vi-zh/, vi-ko/, ...)
 └── tts/       one subfolder per language, plus a shared
                espeak-ng-data/ (Piper's runtime phoneme data,

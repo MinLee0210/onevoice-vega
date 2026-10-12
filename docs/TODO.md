@@ -35,7 +35,11 @@ Organisers' dates: prototype submission Sep 2026, field testing Oct 2026, finale
 - [ ] Distil a teacher MT (HY-MT1.5 / TranslateGemma, check licences) into Opus-MT
       or a LoRA using a hard-example glossary set.
 - [ ] Airplane-mode audit: no network use anywhere (model downloads, ort, espeak data).
-- [ ] Noise eval needs a no-denoise arm (denoising can hurt ASR, arXiv 2512.17562).
+- [x] Real-noise eval (2026-10-12): `scripts/evaluate_asr_noise.py` mixes ESC-50
+      industrial sounds (chainsaw/engine/siren/...) — PhoWhisper 11.62% at 5 dB
+      (≤15% holds; AWGN was conservative). docs/reports/asr_noise_real.md.
+- [ ] Noise eval still needs a no-denoise arm *in Rust* (Python RNNoise/DFN
+      bindings broken; denoising can hurt ASR, arXiv 2512.17562).
 
 ### Then (Phase 3+, needs hardware / models / design)
 - [ ] **Vega Air carrier** — broadcast-tuned TTS (slower rate, higher
@@ -49,8 +53,13 @@ Organisers' dates: prototype submission Sep 2026, field testing Oct 2026, finale
       (unclaimed by all competitors), SOS trigger (long/triple-press PTT),
       multi-state LED semantics, high-SPL speaker + EQ, translation-log + USB
       export, lanyard/belt-clip.
-- [ ] Export the remaining 5 MT directions (en-vi, vi-zh, zh-vi, vi-ko, ko-vi)
-      — the device structurally can't translate those pairs yet.
+- [x] Export the remaining MT directions (2026-10-12) — en-vi direct plus the
+      EN-pivot legs (en-zh, zh-en, ko-en, en-ko); all 6 directions now wired
+      via `MtChain` (VI↔ZH/KO pivot through EN). Quality measured in
+      docs/reports/mt_quality.md. Caveat: the `tc-big-en-ko` checkpoint is
+      broken (BLEU 0.1) so VI→KO is wired but not yet usable.
+- [ ] Replace the broken en→ko model (or use M2M-100 for KO) before relying
+      on VI→KO. Also COMET not yet measured (BLEU/chrF only).
 - [ ] Prototype VietASR (13M CTC, no autoregressive loop) as VI latency fix.
 - [ ] QNN/Hexagon smoke test (week 1 of Phase 3 hardware bring-up).
 - [ ] **Test edge devices on Qualcomm AI Hub** — compile + profile every pipeline
@@ -99,7 +108,9 @@ Organisers' dates: prototype submission Sep 2026, field testing Oct 2026, finale
       slice. Still open: this isn't the same thing as W8A16 on the
       actual Hexagon NPU via AI Hub Workbench — see the QCS6490 Whisper
       deployment risk below, that path isn't proven yet.
-- [ ] VI↔KO / VI↔ZH: direct vs. EN-pivot — measure quality delta
+- [~] VI↔KO / VI↔ZH: direct vs. EN-pivot — **EN-pivot measured** (2026-10-12,
+      docs/reports/mt_quality.md): VI→ZH ok (en-zh leg 46.5 BLEU), VI→KO
+      blocked by broken tc-big-en-ko (BLEU 0.1). Direct models don't exist.
 - [x] Rust vs. C++ for runtime — `ort` crate confirmed working (builds
       clean, no cmake dependency, real ONNX inference verified) on CPU;
       see docs/decisions/onnx-runtime-merged-decoder-gotchas.md. QNN

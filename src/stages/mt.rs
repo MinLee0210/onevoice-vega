@@ -63,6 +63,7 @@ use crate::audio::{Translation, Utterance};
 use crate::error::OneVoiceError;
 use crate::stages::glossary::Glossary;
 use crate::stages::seq2seq::{self, DecoderSpec, LayerCache};
+use crate::stages::session;
 
 const MAX_NEW_TOKENS: usize = 64;
 /// Logit bias added to a glossary target sequence's next expected token.
@@ -94,14 +95,12 @@ impl MtEngine {
                 OneVoiceError::Mt(format!("failed to load tokenizer.json: {source}"))
             })?;
 
-        let encoder = Session::builder()
-            .and_then(|mut b| b.commit_from_file(model_dir.join("encoder_model.onnx")))
-            .map_err(|source| {
+        let encoder =
+            session::commit_from_file(model_dir.join("encoder_model.onnx")).map_err(|source| {
                 OneVoiceError::Mt(format!("failed to load encoder_model.onnx: {source}"))
             })?;
 
-        let decoder = Session::builder()
-            .and_then(|mut b| b.commit_from_file(model_dir.join("decoder_model_merged.onnx")))
+        let decoder = session::commit_from_file(model_dir.join("decoder_model_merged.onnx"))
             .map_err(|source| {
                 OneVoiceError::Mt(format!(
                     "failed to load decoder_model_merged.onnx: {source}"
@@ -171,20 +170,33 @@ impl MtEngine {
             missing_terms = ?missing_terms.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
             "glossary term(s) missing from unbiased translation, running biased decode pass"
         );
-        let bias_seqs: Vec<Vec<i64>> = missing_terms
-            .iter()
-            .map(|(_, target_term)| -> Result<Vec<i64>, OneVoiceError> {
-                let encoding = self
-                    .tokenizer
-                    .encode(*target_term, false)
-                    .map_err(|source| {
-                        OneVoiceError::Mt(format!(
-                            "tokenizer encode failed for glossary term {target_term:?}: {source}"
-                        ))
-                    })?;
-                Ok(encoding.get_ids().iter().map(|&id| id as i64).collect())
-            })
-            .collect::<Result<_, _>>()?;
+        // Encode each missing term to the token sequence to bias toward. A
+        // term that tokenizes to nothing (a blank/whitespace-only termbase
+        // cell) is skipped rather than pushed as an empty sequence:
+        // `run_decoder_greedy` indexes into `seq[progress]`, so an empty
+        // sequence would panic. If nothing is left to bias, keep the
+        // baseline translation.
+        let mut bias_seqs: Vec<Vec<i64>> = Vec::with_capacity(missing_terms.len());
+        for (_, target_term) in &missing_terms {
+            let encoding = self
+                .tokenizer
+                .encode(*target_term, false)
+                .map_err(|source| {
+                    OneVoiceError::Mt(format!(
+                        "tokenizer encode failed for glossary term {target_term:?}: {source}"
+                    ))
+                })?;
+            let ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
+            if !ids.is_empty() {
+                bias_seqs.push(ids);
+            }
+        }
+        if bias_seqs.is_empty() {
+            return Ok(Translation {
+                text: baseline_text,
+                lang: target_lang.to_string(),
+            });
+        }
 
         let biased_generated =
             self.run_decoder_greedy(&encoder_hidden_states, &attention_mask, seq_len, &bias_seqs)?;
@@ -280,9 +292,10 @@ impl MtEngine {
             } else {
                 biased_logits = last_step_logits.to_vec();
                 for (i, seq) in bias_seqs.iter().enumerate() {
-                    if !satisfied[i] {
-                        biased_logits[seq[progress[i]] as usize] += GLOSSARY_BIAS;
+                    if seq.is_empty() || satisfied[i] {
+                        continue;
                     }
+                    biased_logits[seq[progress[i]] as usize] += GLOSSARY_BIAS;
                 }
                 &biased_logits
             };
@@ -294,7 +307,7 @@ impl MtEngine {
             generated.push(next_id);
 
             for (i, seq) in bias_seqs.iter().enumerate() {
-                if satisfied[i] {
+                if seq.is_empty() || satisfied[i] {
                     continue;
                 }
                 if next_id == seq[progress[i]] {
@@ -316,6 +329,13 @@ impl MtEngine {
 
             seq2seq::extract_present_caches(&outputs, &mut cache, step == 0)
                 .map_err(OneVoiceError::Mt)?;
+        }
+
+        if generated.len() == MAX_NEW_TOKENS {
+            tracing::warn!(
+                max_new_tokens = MAX_NEW_TOKENS,
+                "MT decode hit the max-new-tokens cap — translation may be truncated"
+            );
         }
 
         Ok(generated)
@@ -370,6 +390,67 @@ impl MtEngine {
         }
 
         Ok(feeds)
+    }
+}
+
+/// Owns the MT stage's model(s): a single `src→target` engine, or two engines
+/// chained `src→pivot→target` when no direct model exists (e.g. VI→KO — see
+/// `config::PivotSpec`). Glossary enforcement runs on each leg with that
+/// leg's language pair, so a `vi→en` term applies on leg 1 and an `en→zh`
+/// term on leg 2.
+pub struct MtChain {
+    first: MtEngine,
+    first_target: String,
+    target: String,
+    second: Option<MtEngine>,
+}
+
+impl MtChain {
+    /// Direct `src→target` translation with one model.
+    pub fn direct(model_dir: impl Into<PathBuf>, target_lang: &str) -> Result<Self, OneVoiceError> {
+        Ok(Self {
+            first: MtEngine::load(model_dir)?,
+            first_target: target_lang.to_string(),
+            target: target_lang.to_string(),
+            second: None,
+        })
+    }
+
+    /// Pivoted `src→pivot→target` translation with two models:
+    /// `src_pivot_dir` does `src→pivot`, `pivot_target_dir` does
+    /// `pivot→target`.
+    pub fn pivot(
+        src_pivot_dir: impl Into<PathBuf>,
+        pivot_lang: &str,
+        pivot_target_dir: impl Into<PathBuf>,
+        target_lang: &str,
+    ) -> Result<Self, OneVoiceError> {
+        Ok(Self {
+            first: MtEngine::load(src_pivot_dir)?,
+            first_target: pivot_lang.to_string(),
+            target: target_lang.to_string(),
+            second: Some(MtEngine::load(pivot_target_dir)?),
+        })
+    }
+
+    pub fn translate(
+        &mut self,
+        utterance: &Utterance,
+        glossary: &Glossary,
+    ) -> Result<Translation, OneVoiceError> {
+        let first = self
+            .first
+            .translate(utterance, &self.first_target, glossary)?;
+        match &mut self.second {
+            None => Ok(first),
+            Some(second) => {
+                let intermediate = Utterance {
+                    text: first.text,
+                    lang: self.first_target.clone(),
+                };
+                second.translate(&intermediate, &self.target, glossary)
+            }
+        }
     }
 }
 
@@ -465,6 +546,26 @@ mod tests {
             .expect("translate failed");
 
         assert_eq!(translation.text, "forklift approaching sector three.");
+    }
+
+    /// VI→ZH via an EN pivot: vi-en leg then en-zh leg. Requires both
+    /// `models/mt/vi-en` and `models/mt/en-zh` on disk.
+    #[test]
+    #[ignore = "requires models/mt/vi-en and models/mt/en-zh"]
+    fn pivots_vi_to_zh_through_en() {
+        let mut chain = MtChain::pivot("models/mt/vi-en", "en", "models/mt/en-zh", "zh")
+            .expect("failed to load MtChain");
+        let utterance = Utterance {
+            text: "Xin chào, bạn khỏe không?".to_string(),
+            lang: "vi".to_string(),
+        };
+
+        let translation = chain
+            .translate(&utterance, &Glossary::new())
+            .expect("translate failed");
+
+        assert_eq!(translation.lang, "zh");
+        assert!(!translation.text.trim().is_empty());
     }
 
     /// When the unbiased pass already contains the glossary target term,

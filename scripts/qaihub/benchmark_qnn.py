@@ -29,10 +29,22 @@ import qai_hub  # noqa: E402
 
 FP32_DIR = Path("/tmp/fp32models")
 TAG = "onevoice-fp32"
-OPTIONS = "--target_runtime precompiled_qnn_onnx --quantize_full_type int8 --quantize_io"
+# --truncate_64bit_io is required for the decoders: their token-id /
+# attention-mask inputs are int64, which the QNN converter rejects unless
+# truncated. Encoders (fp32 `input_features` only) don't need it, which is
+# why the encoder-only matrix compiled without it.
+OPTIONS = (
+    "--target_runtime precompiled_qnn_onnx --quantize_full_type int8 "
+    "--quantize_io --truncate_64bit_io"
+)
 
 ENC = {"feature_size": 80, "encoder_sequence_length": 3000}
 DEC_BASE = {"encoder_sequence_length / 2": 1500, "encoder_sequence_length_out": 1500}
+DEC_FIRST_BASE = {"encoder_sequence_length / 2": 1500}
+MT_ENC = {"encoder_sequence_length": 32}
+MT_DEC_FIRST = {"encoder_sequence_length": 32}
+MT_DEC_PAST = {"encoder_sequence_length_out": 32}
+MT_DEC_MERGED = {"encoder_sequence_length": 32, "encoder_sequence_length_out": 32}
 
 FP32_MODELS: list[dict] = [
     {"key": "phowhisper_base_encoder", "file": "phowhisper-base-encoder-fp32.onnx", "dims": ENC},
@@ -45,6 +57,47 @@ FP32_MODELS: list[dict] = [
     },
     {"key": "whisper_base_decoder", "file": "whisper-base-decoder-fp32.onnx", "dims": DEC_BASE},
     {"key": "whisper_small_decoder", "file": "whisper-small-decoder-fp32.onnx", "dims": DEC_BASE},
+    # Non-merged (split first/past) decoders: no `use_cache_branch` If-node,
+    # so this is the alternative export to try if the merged decoder fails.
+    {
+        "key": "whisper_base_decoder_first",
+        "file": "whisper-base-decoder-first-fp32.onnx",
+        "dims": DEC_FIRST_BASE,
+    },
+    {
+        "key": "whisper_base_decoder_past",
+        "file": "whisper-base-decoder-past-fp32.onnx",
+        "dims": DEC_BASE,
+    },
+    # PhoWhisper-base (VI) split decoders — the VI ASR path on the NPU.
+    {
+        "key": "phowhisper_base_decoder_first",
+        "file": "phowhisper-base-decoder-first-fp32.onnx",
+        "dims": DEC_FIRST_BASE,
+    },
+    {
+        "key": "phowhisper_base_decoder_past",
+        "file": "phowhisper-base-decoder-past-fp32.onnx",
+        "dims": DEC_BASE,
+    },
+    # MT (Opus-MT vi-en) — the bundled models/mt/*.onnx are dynamic-INT8
+    # (QNN rejects those); these are the FP32 sources for the QNN path.
+    {"key": "opus_mt_vi_en_encoder", "file": "opus-mt-vi-en-encoder-fp32.onnx", "dims": MT_ENC},
+    {
+        "key": "opus_mt_vi_en_decoder_first",
+        "file": "opus-mt-vi-en-decoder-first-fp32.onnx",
+        "dims": MT_DEC_FIRST,
+    },
+    {
+        "key": "opus_mt_vi_en_decoder_past",
+        "file": "opus-mt-vi-en-decoder-past-fp32.onnx",
+        "dims": MT_DEC_PAST,
+    },
+    {
+        "key": "opus_mt_vi_en_decoder_merged",
+        "file": "opus-mt-vi-en-decoder-fp32.onnx",
+        "dims": MT_DEC_MERGED,
+    },
 ]
 
 HF_SOURCES = [
@@ -65,6 +118,37 @@ HF_SOURCES = [
         "huuquyet/PhoWhisper-base",
         "onnx/decoder_model_merged.onnx",
         "phowhisper-base-decoder-fp32.onnx",
+    ),
+    # Split (non-merged) decoders for PhoWhisper-base (VI) too.
+    (
+        "huuquyet/PhoWhisper-base",
+        "onnx/decoder_model.onnx",
+        "phowhisper-base-decoder-first-fp32.onnx",
+    ),
+    (
+        "huuquyet/PhoWhisper-base",
+        "onnx/decoder_with_past_model.onnx",
+        "phowhisper-base-decoder-past-fp32.onnx",
+    ),
+    # Split (non-merged) Whisper decoders -- alternative to the merged one.
+    ("onnx-community/whisper-base", "onnx/decoder_model.onnx", "whisper-base-decoder-first-fp32.onnx"),
+    (
+        "onnx-community/whisper-base",
+        "onnx/decoder_with_past_model.onnx",
+        "whisper-base-decoder-past-fp32.onnx",
+    ),
+    # Opus-MT vi-en (Xenova ships fp32 ONNX directly; Helsinki-NLP does not).
+    ("Xenova/opus-mt-vi-en", "onnx/encoder_model.onnx", "opus-mt-vi-en-encoder-fp32.onnx"),
+    ("Xenova/opus-mt-vi-en", "onnx/decoder_model.onnx", "opus-mt-vi-en-decoder-first-fp32.onnx"),
+    (
+        "Xenova/opus-mt-vi-en",
+        "onnx/decoder_with_past_model.onnx",
+        "opus-mt-vi-en-decoder-past-fp32.onnx",
+    ),
+    (
+        "Xenova/opus-mt-vi-en",
+        "onnx/decoder_model_merged.onnx",
+        "opus-mt-vi-en-decoder-fp32.onnx",
     ),
 ]
 
@@ -201,5 +285,5 @@ if __name__ == "__main__":
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--models", nargs="*")
     parser.add_argument("--devices", nargs="*", default=DEFAULT_DEVICES)
-    parser.add_argument("--csv", default="/tmp/onevoice_qnn_latency.csv")
+    parser.add_argument("--csv", default=str(common.REPO_ROOT / "data" / "onevoice_qnn_latency.csv"))
     raise SystemExit(main(parser.parse_args()))

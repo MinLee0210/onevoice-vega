@@ -1,66 +1,56 @@
-import shutil
+#!/usr/bin/env python3
+"""Dynamic INT8-quantize every Opus-MT leg under models/mt/.
+
+The runtime loads whatever ONNX is in each `models/mt/<pair>/` dir; the v3
+bundle ships INT8 to stay within GitHub's 2 GB/asset limit (fp32 legs are
+~3 GB total). Uses `onnxruntime.quantization.quantize_dynamic` (weight-only,
+per-tensor) — the same dynamic-int8 scheme the v2 bundle used. Originals are
+replaced in place; already-int8 legs are skipped (re-quantizing corrupts).
+
+    uv run --no-project --python 3.12 --with onnx --with onnxruntime \
+      python scripts/edge/quantize_mt.py
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 
-from optimum.onnxruntime import ORTQuantizer
-from optimum.onnxruntime.configuration import AutoQuantizationConfig
+from onnxruntime.quantization import QuantType, quantize_dynamic
+
+# int8 encoder ~47 MB, fp32 ~180 MB+ — anything smaller is already quantized.
+FP32_MIN_BYTES = 120_000_000
 
 
-def main():
-    dirs = [Path("models/mt/en-vi"), Path("models/mt/vi-en")]
+def main() -> int:
+    root = Path("models/mt")
+    dirs = sorted(d for d in root.glob("*") if (d / "encoder_model.onnx").exists())
+    if not dirs:
+        raise SystemExit("no models/mt/*/encoder_model.onnx found")
 
     for save_dir in dirs:
-        if not save_dir.exists():
-            continue
-        print("\n==================================================")
-        print(f"Quantizing translation model components in {save_dir}...")
-        print("==================================================")
-
-        # 1. Define ARM64 optimized dynamic quantization config
-        qconfig = AutoQuantizationConfig.arm64(is_static=False, per_channel=False)
-
-        # 2. Quantize each model component
-        components = ["encoder_model", "decoder_model_merged"]
-
-        for component in components:
+        print(f"== {save_dir} ==")
+        for component in ("encoder_model", "decoder_model_merged"):
             onnx_path = save_dir / f"{component}.onnx"
-            print(f"\nProcessing {component}.onnx...")
-
-            quantizer = ORTQuantizer.from_pretrained(save_dir, file_name=f"{component}.onnx")
-
-            # This will save the quantized model to the directory with the default suffix '_quantized'
-            quantizer.quantize(
-                save_dir=save_dir, quantization_config=qconfig, file_suffix="quantized"
+            if not onnx_path.exists():
+                continue
+            if onnx_path.stat().st_size < FP32_MIN_BYTES:
+                print(f"  {component}: already int8, skipping")
+                continue
+            tmp = save_dir / f"{component}.int8.onnx"
+            quantize_dynamic(
+                model_input=str(onnx_path),
+                model_output=str(tmp),
+                weight_type=QuantType.QInt8,
+                per_channel=False,
             )
+            orig_mb = onnx_path.stat().st_size / 1e6
+            q_mb = tmp.stat().st_size / 1e6
+            tmp.replace(onnx_path)
+            print(f"  {component}: {orig_mb:.0f} MB -> {q_mb:.0f} MB")
 
-            # Verify that the quantized model was created
-            quantized_path = save_dir / f"{component}_quantized.onnx"
-            if not quantized_path.exists():
-                raise FileNotFoundError(f"Quantization failed, {quantized_path} not found.")
-
-            # Print original vs quantized sizes
-            original_size = onnx_path.stat().st_size / (1024 * 1024)
-            quantized_size = quantized_path.stat().st_size / (1024 * 1024)
-            print(f"  Original:  {original_size:.1f} MB")
-            print(
-                f"  Quantized: {quantized_size:.1f} MB (Reduction: {(1.0 - quantized_size / original_size) * 100:.1f}%)"
-            )
-
-        # 3. Swap the files
-        print("\nReplacing original models with quantized variants...")
-        for component in components:
-            onnx_path = save_dir / f"{component}.onnx"
-            quantized_path = save_dir / f"{component}_quantized.onnx"
-
-            # Backup the original model just in case
-            backup_path = save_dir / f"{component}_original.onnx"
-            shutil.move(onnx_path, backup_path)
-
-            # Rename quantized to replace the original
-            shutil.move(quantized_path, onnx_path)
-            print(f"  Replaced {component}.onnx with quantized version.")
-
-    print("\nQuantization successfully completed for all directories!")
+    print("done")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

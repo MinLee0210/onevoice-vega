@@ -68,9 +68,9 @@ this pipeline has to design around.
 |---|---|---|
 | Denoise | RNNoise via the `nnnoiseless` Rust crate (BSD-3-Clause, weights compiled in — RNNoise has no official ONNX export, unlike every other stage) | DeepFilterNet3 (better on machinery noise). Has a real pre-exported ONNX (MIT), but it takes DeepFilterNet's own ERB/STFT features as input, not raw audio — needs its own feature-extraction implementation, not a drop-in swap. See docs/decisions/pipeline-improvement-research-2026-07.md. |
 | VAD | Silero VAD (MIT, ONNX) — validated | — |
-| ASR (VI) | PhoWhisper-base 74M (BSD-3-Clause) — validated, WER 2.2% on VIVOS sample | PhoWhisper-small 244M, W8A16 on Hexagon; also worth evaluating VietASR (13M, CTC not seq2seq — no autoregressive decode loop at all, Apache-2.0), see docs/decisions/pipeline-improvement-research-2026-07.md |
+| ASR (VI) | PhoWhisper-base 74M (BSD-3-Clause) — validated, WER 2.19% clean / 9.84% @5dB (VIVOS, 20 utts) | **CTC backend now implemented** (`src/stages/ctc.rs`, auto-selected by `asr_model_dir`); measured `wav2vec2-base-vi` is ~6× faster (ASR 57 ms vs 360 ms) but 10.4% WER — Whisper stays default. Still open: a *better* VI CTC checkpoint (VietASR 13M). See docs/reports/asr_ab.md |
 | ASR (EN/ZH/KO) | Whisper-Small — **not** via AI Hub pre-quantized (that path is currently broken for QCS6490, see Hardware toolchain below); use a generic pre-made ONNX instead (e.g. onnx-community/whisper-small, MIT) | Whisper-Large-v3-Turbo quantized |
-| MT | Opus-MT per-pair (~300MB, Apache/CC-BY, INT8) — validated, Rust port working end-to-end | LoRA fine-tune on industrial glossary; VinAI-Translate/envit5 for VI↔EN quality |
+| MT | Opus-MT per-pair (~300MB, Apache/CC-BY, INT8) — all 6 directions wired: vi-en/en-vi direct, VI↔ZH/KO via EN pivot (`MtChain`); Rust port tested end-to-end | LoRA fine-tune on industrial glossary; replace broken en→ko checkpoint (tc-big-en-ko BLEU 0.1) or use M2M-100 for KO |
 | TTS | All 4 target langs (device is bidirectional): Piper (VITS/ONNX, CPU real-time) for VI (`vais1000-medium`) / EN (`lessac`) / ZH (`huayan`, Mandarin); MMS-TTS (`facebook/mms-tts-kor`, **CC-BY-NC 4.0** — non-commercial, see THIRD_PARTY_LICENSES.md; VITS/ONNX) for KO — Piper has no Korean voice. **Real Rust implementation, not a stub** — `piper-rs` crate for VI/EN/ZH (VITS + espeak-ng phonemization), hand-rolled `uroman` + ported char-tokenizer + raw `ort` inference for KO (no crate covers MMS). All 4 produce genuine audio, round-trip-ASR verified through the real Rust path, not just the Python notebook. See license trap below (not a hackathon blocker) and `src/stages/tts.rs` module docs for the `piper-rs` build gotcha | Kyutai Pocket TTS once it supports Vietnamese (English-only as of this writing, checked directly) |
 
 **License trap:** NLLB is CC-BY-NC — avoid for anything meant to be
@@ -250,8 +250,11 @@ Phase 5 (Nov 2026)             → finale demo, HCMC
   legal answer before commercialization — the hackathon prototype
   proceeds regardless per the explicit call to defer legal to that
   later stage.
-- VI↔KO / VI↔ZH quality (low-resource pairs) — may need EN-pivot
-  fallback (VI→EN→KO/ZH); measure quality delta.
+- VI↔KO / VI↔ZH quality (low-resource pairs) — **EN-pivot now
+  implemented and measured** (docs/reports/mt_quality.md): VI→ZH pivot is
+  fine (en-zh leg 46.5 BLEU), but the `tc-big-en-ko` en→ko checkpoint is
+  broken (BLEU 0.1) so VI→KO is not viable yet — needs a different en→ko
+  model or a multilingual model (M2M-100, MIT) for KO.
 - **Glossary enforcement is real but only validated for vi-en, on 10
   test sentences, with a fluency cost.** Decoder-logit-bias technique
   (`src/stages/mt.rs`) hits 100% term accuracy vs. 50% baseline, but
