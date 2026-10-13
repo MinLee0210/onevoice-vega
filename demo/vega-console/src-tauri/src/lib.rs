@@ -12,7 +12,10 @@ use serde::Serialize;
 use tauri::State;
 
 use onevoice::config::Config;
-use onevoice::engine::{audio_to_wav, CycleOutcome, Engine, EngineConfig};
+use onevoice::engine::{
+    audio_to_wav, BroadcastEngine, BroadcastEngineConfig, CycleOutcome, Engine, EngineConfig,
+};
+use onevoice::wav_to_audio;
 
 /// Where the model/config/data tree lives. Overridable with `ONEVOICE_ROOT`;
 /// otherwise the repo root relative to this crate (dev).
@@ -96,6 +99,30 @@ struct EngineState {
     pair: (String, String),
 }
 
+/// Vega Air: one resident broadcast engine per (source, targets) selection.
+#[derive(Default)]
+struct BroadcastState {
+    engine: Option<BroadcastEngine>,
+    key: (String, Vec<String>),
+}
+
+#[derive(Serialize)]
+struct BroadcastLegDto {
+    lang: String,
+    translation: String,
+    wav: Vec<u8>,
+    glossary_terms: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct BroadcastResult {
+    transcript: String,
+    confidence: f32,
+    no_speech: bool,
+    low_confidence: bool,
+    legs: Vec<BroadcastLegDto>,
+}
+
 /// Is the model bundle present so the engine can load?
 #[tauri::command]
 fn ready(paths: State<AppPaths>) -> bool {
@@ -135,13 +162,61 @@ fn process_utterance(
     Ok(to_result(outcome))
 }
 
+/// Vega Air — transcribe once, then MT+TTS to each selected target language.
+#[tauri::command]
+fn broadcast(
+    pcm_wav: Vec<u8>,
+    source: String,
+    targets: Vec<String>,
+    state: State<'_, Mutex<BroadcastState>>,
+    paths: State<'_, AppPaths>,
+) -> Result<BroadcastResult, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+
+    if st.engine.is_none() || st.key != (source.clone(), targets.clone()) {
+        let config = Config::load(&paths.configs).map_err(|e| e.to_string())?;
+        let engine = BroadcastEngine::new(BroadcastEngineConfig {
+            config: &config,
+            models_dir: &paths.models,
+            data_dir: &paths.data,
+            source_lang: &source,
+            target_langs: &targets,
+        })
+        .map_err(|e| e.to_string())?;
+        st.engine = Some(engine);
+        st.key = (source, targets);
+    }
+
+    let audio = wav_to_audio(&pcm_wav).map_err(|e| e.to_string())?;
+    let engine = st.engine.as_mut().expect("engine set just above");
+    let outcome = engine.process(audio).map_err(|e| e.to_string())?;
+
+    Ok(BroadcastResult {
+        transcript: outcome.transcript,
+        confidence: outcome.confidence,
+        no_speech: outcome.no_speech,
+        low_confidence: outcome.low_confidence,
+        legs: outcome
+            .legs
+            .into_iter()
+            .map(|leg| BroadcastLegDto {
+                lang: leg.lang,
+                translation: leg.translation,
+                wav: audio_to_wav(&leg.audio),
+                glossary_terms: leg.glossary_terms,
+            })
+            .collect(),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppPaths::resolve())
         .manage(Mutex::new(EngineState::default()))
-        .invoke_handler(tauri::generate_handler![ready, process_utterance])
+        .manage(Mutex::new(BroadcastState::default()))
+        .invoke_handler(tauri::generate_handler![ready, process_utterance, broadcast])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

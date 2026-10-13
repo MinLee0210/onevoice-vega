@@ -30,12 +30,14 @@ Build a distributable: `npm run tauri build` (outputs under
 
 ## Status / next
 
-- ✅ Step 0 done: `onevoice::Engine` in-memory API (WAV in/out + telemetry).
-- ✅ This scaffold: Hand mode — mic capture, PTT (button + Space), result
-  cards, latency HUD, error/no-speech/low-confidence states.
-- ⏳ Not yet: **Air mode** (broadcast EN/ZH/KO via a Tauri Channel), waveform
-  visualisation, glossary chips, LED/haptic simulation, LAN-server variant
-  (see the design doc's build plan, steps 5–9).
+- ✅ Step 0: `onevoice::Engine` + `BroadcastEngine` in-memory APIs (WAV in/out
+  + telemetry) — `src/lib.rs`.
+- ✅ Hand mode: mic capture, PTT (button + Space), transcript/translation
+  cards, **glossary chips**, latency HUD, error/no-speech/low-confidence states.
+- ✅ Air mode: one utterance → EN/ZH/KO legs, each shown + played in sequence
+  (broadcast-tuned slower TTS).
+- ⏳ Not yet: waveform visualisation, LED/haptic simulation, LAN-server variant
+  (see the design doc's build plan, steps 4, 6, 7).
 - Note: mic capture uses the deprecated `ScriptProcessorNode` (simple, works);
   the production path is an `AudioWorklet`.
 

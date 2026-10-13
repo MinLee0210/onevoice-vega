@@ -3,30 +3,64 @@ import * as api from "./api";
 import { encodeWav, playWav, startRecording, type Recorder } from "./audio";
 
 const LANGS: Record<string, string> = { vi: "VI", en: "EN", zh: "ZH", ko: "KO" };
+const ALL = ["en", "zh", "ko"];
 
 type Phase = "idle" | "loading" | "listening" | "translating" | "speaking" | "error";
+type Mode = "hand" | "air";
+
+function Chips({ terms }: { terms: string[] }) {
+  if (!terms.length) return null;
+  return (
+    <div className="chips">
+      {terms.map((t) => (
+        <span className="chip" key={t}>🔒 {t}</span>
+      ))}
+    </div>
+  );
+}
+
+function Hud({ te, confidence }: { te: api.Telemetry; confidence: number }) {
+  return (
+    <section className="hud">
+      <div className="hud-head">
+        <span>⏱ TTFA {(te.to_first_audio_ms / 1000).toFixed(2)}s</span>
+        <span>conf {confidence.toFixed(2)}</span>
+      </div>
+      <div className="bars">
+        {([["denoise", te.denoise_ms], ["VAD", te.vad_ms], ["ASR", te.asr_ms], ["MT", te.mt_ms], ["TTS", te.tts_total_ms]] as const).map(
+          ([name, ms]) => (
+            <div className="bar" key={name}>
+              <span>{name}</span>
+              <div className="track"><div style={{ width: `${Math.min(100, (ms / 500) * 100)}%` }} /></div>
+              <span>{ms.toFixed(0)}ms</span>
+            </div>
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
 
 export default function App() {
+  const [mode, setMode] = useState<Mode>("hand");
   const [source, setSource] = useState("vi");
   const [target, setTarget] = useState("en");
+  const [airTargets, setAirTargets] = useState<string[]>(["en", "zh", "ko"]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [ready, setReady] = useState(false);
   const [result, setResult] = useState<api.CycleResult | null>(null);
+  const [bc, setBc] = useState<api.BroadcastResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const recorder = useRef<Recorder | null>(null);
 
   useEffect(() => {
-    api
-      .isReady()
+    api.isReady()
       .then((ok) => {
         setReady(ok);
         setPhase(ok ? "idle" : "error");
         if (!ok) setError("Models not found — run scripts/setup_models.sh (or set ONEVOICE_ROOT).");
       })
-      .catch((e) => {
-        setError(String(e));
-        setPhase("error");
-      });
+      .catch((e) => { setError(String(e)); setPhase("error"); });
   }, []);
 
   const press = async () => {
@@ -52,15 +86,28 @@ export default function App() {
     }
     setPhase("translating");
     try {
-      const res = await api.processUtterance(encodeWav(samples), source, target);
-      setResult(res);
-      if (res.no_speech || res.low_confidence) {
-        setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — say it again.");
-        setPhase("idle");
-        return;
+      const wav = encodeWav(samples);
+      if (mode === "hand") {
+        const res = await api.processUtterance(wav, source, target);
+        setResult(res);
+        if (res.no_speech || res.low_confidence) {
+          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — say it again.");
+          setPhase("idle");
+          return;
+        }
+        setPhase("speaking");
+        await playWav(new Uint8Array(res.wav));
+      } else {
+        const res = await api.broadcast(wav, source, airTargets);
+        setBc(res);
+        if (res.no_speech || res.low_confidence || !res.legs.length) {
+          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — say it again.");
+          setPhase("idle");
+          return;
+        }
+        setPhase("speaking");
+        for (const leg of res.legs) await playWav(new Uint8Array(leg.wav));
       }
-      setPhase("speaking");
-      await playWav(new Uint8Array(res.wav));
       setPhase("idle");
     } catch (e) {
       setError(String(e));
@@ -68,53 +115,58 @@ export default function App() {
     }
   };
 
-  // Space bar = push to talk.
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !e.repeat) {
-        e.preventDefault();
-        void press();
-      }
+      if (e.code === "Space" && !e.repeat) { e.preventDefault(); void press(); }
     };
-    const up = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        void release();
-      }
-    };
+    const up = (e: KeyboardEvent) => { if (e.code === "Space") { e.preventDefault(); void release(); } };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   });
 
-  const te = result?.telemetry;
-  const pivot = !["en", "vi"].includes(target) || !["en", "vi"].includes(source);
+  const pivot = (mode === "hand" && (["zh", "ko"].includes(target) || ["zh", "ko"].includes(source)));
 
   return (
     <div className="app">
       <header>
         <span className="brand">VEGA</span>
-        <span className="badge offline" title="No network calls — the engine runs on-device">
-          ● Offline
-        </span>
+        <div className="modes">
+          <button className={mode === "hand" ? "on" : ""} onClick={() => setMode("hand")}>Hand</button>
+          <button className={mode === "air" ? "on" : ""} onClick={() => setMode("air")}>Air</button>
+        </div>
+        <span className="badge offline" title="No network calls — runs on-device">● Offline</span>
       </header>
 
       <section className="controls">
         <select value={source} onChange={(e) => setSource(e.target.value)} disabled={phase === "listening"}>
-          {Object.entries(LANGS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
+          {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button className="swap" onClick={() => { setSource(target); setTarget(source); }}>⇄</button>
-        <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={phase === "listening"}>
-          {Object.entries(LANGS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-        {pivot && <span className="pivot">via EN</span>}
+        {mode === "hand" ? (
+          <>
+            <button className="swap" onClick={() => { setSource(target); setTarget(source); }}>⇄</button>
+            <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={phase === "listening"}>
+              {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            {pivot && <span className="pivot">via EN</span>}
+          </>
+        ) : (
+          <div className="air-targets">
+            {ALL.map((t) => (
+              <label key={t} className={airTargets.includes(t) ? "tg on" : "tg"}>
+                <input
+                  type="checkbox"
+                  checked={airTargets.includes(t)}
+                  disabled={phase === "listening" || phase === "translating"}
+                  onChange={(e) =>
+                    setAirTargets((prev) => (e.target.checked ? [...prev, t] : prev.filter((x) => x !== t)))
+                  }
+                />
+                {LANGS[t]}
+              </label>
+            ))}
+          </div>
+        )}
       </section>
 
       <button
@@ -127,39 +179,35 @@ export default function App() {
         {phase === "listening" ? "● LISTENING…" : phase === "translating" ? "translating…" : "HOLD TO TALK · or Space"}
       </button>
 
-      <section className="cards">
-        <div className="card">
-          <label>transcript ({LANGS[source]})</label>
-          <p>{result?.transcript || "—"}</p>
-        </div>
-        <div className="card">
-          <label>translation ({LANGS[target]})</label>
-          <p>{result?.translation || "—"}</p>
-        </div>
-      </section>
-
-      {te && (
-        <section className="hud">
-          <div className="hud-head">
-            <span>⏱ TTFA {(te.to_first_audio_ms / 1000).toFixed(2)}s</span>
-            <span>conf {result?.confidence.toFixed(2)}</span>
-          </div>
-          <div className="bars">
-            {[
-              ["denoise", te.denoise_ms],
-              ["VAD", te.vad_ms],
-              ["ASR", te.asr_ms],
-              ["MT", te.mt_ms],
-              ["TTS", te.tts_total_ms],
-            ].map(([name, ms]) => (
-              <div className="bar" key={name as string}>
-                <span>{name}</span>
-                <div className="track">
-                  <div style={{ width: `${Math.min(100, ((ms as number) / 500) * 100)}%` }} />
+      {mode === "hand" ? (
+        <>
+          <section className="cards">
+            <div className="card">
+              <label>transcript ({LANGS[source]})</label>
+              <p>{result?.transcript || "—"}</p>
+            </div>
+            <div className="card">
+              <label>translation ({LANGS[target]})</label>
+              <p>{result?.translation || "—"}</p>
+              <Chips terms={result?.glossary_terms ?? []} />
+            </div>
+          </section>
+          {result && <Hud te={result.telemetry} confidence={result.confidence} />}
+        </>
+      ) : (
+        <section className="cards">
+          <div className="card full">
+            <label>broadcast transcript ({LANGS[source]}) → {airTargets.map((t) => LANGS[t]).join(" / ")}</label>
+            <p>{bc?.transcript || "—"}</p>
+            <div className="legs">
+              {bc?.legs.map((leg) => (
+                <div className="leg" key={leg.lang}>
+                  <span className="leg-lang">{LANGS[leg.lang]}</span>
+                  <span className="leg-text">{leg.translation}</span>
+                  <Chips terms={leg.glossary_terms} />
                 </div>
-                <span>{(ms as number).toFixed(0)}ms</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
       )}

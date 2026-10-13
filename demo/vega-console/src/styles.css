@@ -55,3 +55,26 @@ select, .swap {
 .track > div { height: 100%; background: linear-gradient(90deg, #2563eb, var(--accent)); }
 
 .error { margin-top: 14px; padding: 12px; border-radius: 10px; background: #241014; border: 1px solid #4a1d22; color: #ffb4bc; font-size: 14px; }
+
+.modes { display: flex; gap: 4px; margin-left: 8px; }
+.modes button {
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 13px;
+}
+.modes button.on { color: var(--text); border-color: #39465a; background: var(--panel); }
+
+.air-targets { display: flex; gap: 8px; }
+.tg {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
+  border: 1px solid var(--line); color: var(--muted); font-size: 14px; cursor: pointer;
+}
+.tg.on { color: var(--text); border-color: #1f4f38; background: #0f1f16; }
+.tg input { display: none; }
+
+.card.full { grid-column: 1 / -1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #101a2a; border: 1px solid #1e3a5f; color: #9cc4ff; }
+.legs { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.leg { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: start; }
+.leg-lang { font-weight: 700; color: var(--accent); }
+.leg-text { font-size: 15px; }

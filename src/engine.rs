@@ -73,8 +73,13 @@ pub struct CycleOutcome {
     pub confidence: f32,
     pub no_speech: bool,
     pub low_confidence: bool,
+    /// Glossary target terms that were enforced/present in the translation.
+    pub glossary_terms: Vec<String>,
     pub telemetry: Telemetry,
 }
+
+/// Broadcast-tuned TTS rate for Vega Air (>1 = slower, more intelligible).
+pub const BROADCAST_LENGTH_SCALE: f32 = 1.15;
 
 /// Builds an [`MtChain`] for a pair (direct or EN-pivot).
 pub(crate) fn build_mt_chain(
@@ -159,6 +164,7 @@ impl Engine {
                 0.0,
                 true,
                 false,
+                Vec::new(),
                 telem,
             ));
         }
@@ -178,6 +184,7 @@ impl Engine {
                 confidence,
                 false,
                 true,
+                Vec::new(),
                 telem,
             ));
         }
@@ -208,6 +215,7 @@ impl Engine {
         if sample_rate_hz == 0 {
             sample_rate_hz = OUTPUT_FALLBACK_RATE_HZ;
         }
+        let glossary_terms = self.matched_glossary(&utterance.text, &translation.text);
         Ok(self.outcome(
             AudioBuffer::new(samples, sample_rate_hz),
             utterance.text,
@@ -215,6 +223,7 @@ impl Engine {
             confidence,
             false,
             false,
+            glossary_terms,
             telem,
         ))
     }
@@ -223,6 +232,18 @@ impl Engine {
     pub fn process_wav(&mut self, wav_bytes: &[u8]) -> Result<CycleOutcome, OneVoiceError> {
         let audio = wav_to_audio(wav_bytes)?;
         self.process(audio)
+    }
+
+    /// Glossary target terms prescribed for a source text that actually show
+    /// up in the translation (what the UI shows as 🔒 chips).
+    fn matched_glossary(&self, source_text: &str, target_text: &str) -> Vec<String> {
+        let lower = target_text.to_lowercase();
+        self.glossary
+            .find_matches(&self.source_lang, &self.target_lang, source_text)
+            .into_iter()
+            .filter(|(_, tgt)| lower.contains(&tgt.to_lowercase()))
+            .map(|(_, tgt)| tgt.to_string())
+            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -234,6 +255,7 @@ impl Engine {
         confidence: f32,
         no_speech: bool,
         low_confidence: bool,
+        glossary_terms: Vec<String>,
         telemetry: Telemetry,
     ) -> CycleOutcome {
         CycleOutcome {
@@ -245,8 +267,164 @@ impl Engine {
             confidence,
             no_speech,
             low_confidence,
+            glossary_terms,
             telemetry,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Vega Air — one-to-many broadcast (transcribe once, then MT+TTS per target).
+// ---------------------------------------------------------------------------
+
+pub struct BroadcastEngineConfig<'a> {
+    pub config: &'a Config,
+    pub models_dir: &'a Path,
+    pub data_dir: &'a Path,
+    pub source_lang: &'a str,
+    pub target_langs: &'a [String],
+}
+
+pub struct BroadcastLeg {
+    pub lang: String,
+    pub translation: String,
+    pub audio: AudioBuffer,
+    pub glossary_terms: Vec<String>,
+}
+
+pub struct BroadcastOutcome {
+    pub transcript: String,
+    pub confidence: f32,
+    pub no_speech: bool,
+    pub low_confidence: bool,
+    pub legs: Vec<BroadcastLeg>,
+}
+
+struct TargetLeg {
+    lang: String,
+    mt: MtChain,
+    tts: TtsEngine,
+}
+
+/// In-memory broadcast orchestrator (Vega Air). The CLI's `broadcast.rs`
+/// wraps this with file I/O; the demo UI calls it directly.
+pub struct BroadcastEngine {
+    source_lang: String,
+    denoiser: Denoiser,
+    vad: Vad,
+    asr: Asr,
+    glossary: Glossary,
+    targets: Vec<TargetLeg>,
+    min_asr_confidence: f32,
+}
+
+impl BroadcastEngine {
+    pub fn new(cfg: BroadcastEngineConfig) -> Result<Self, OneVoiceError> {
+        let asr_pair = cfg
+            .config
+            .language_pairs
+            .pairs
+            .iter()
+            .find(|p| p.source == cfg.source_lang)
+            .ok_or_else(|| OneVoiceError::LanguagePairNotFound {
+                source_lang: cfg.source_lang.to_string(),
+                target_lang: "<any>".to_string(),
+            })?;
+
+        let mut targets = Vec::new();
+        for target_lang in cfg.target_langs {
+            let pair = cfg
+                .config
+                .language_pairs
+                .find(cfg.source_lang, target_lang)
+                .ok_or_else(|| OneVoiceError::LanguagePairNotFound {
+                    source_lang: cfg.source_lang.to_string(),
+                    target_lang: target_lang.clone(),
+                })?;
+            let mut tts = TtsEngine::load(
+                cfg.models_dir.join(&pair.tts_model_dir),
+                &cfg.models_dir.join("tts"),
+            )?;
+            tts.set_length_scale(BROADCAST_LENGTH_SCALE);
+            targets.push(TargetLeg {
+                lang: target_lang.clone(),
+                mt: build_mt_chain(pair, cfg.models_dir)?,
+                tts,
+            });
+        }
+
+        Ok(Self {
+            source_lang: cfg.source_lang.to_string(),
+            denoiser: if skip_denoise() {
+                Denoiser::bypassed()
+            } else {
+                Denoiser::load()
+            },
+            vad: Vad::load(cfg.models_dir.join("vad/model.onnx"))?,
+            asr: Asr::load(cfg.models_dir.join(&asr_pair.asr_model_dir))?,
+            glossary: Glossary::load(&cfg.data_dir.join("glossary"))?,
+            targets,
+            min_asr_confidence: min_asr_confidence(),
+        })
+    }
+
+    /// Runs one broadcast: ASR once, then MT+TTS to each target in order.
+    pub fn process(&mut self, raw: AudioBuffer) -> Result<BroadcastOutcome, OneVoiceError> {
+        let denoised = self.denoiser.process(raw);
+        let trimmed = self.vad.trim(denoised)?;
+        if trimmed.samples.is_empty() {
+            return Ok(early_outcome(String::new(), 0.0, true, false));
+        }
+
+        let (utterance, confidence) = self
+            .asr
+            .transcribe_with_confidence(&trimmed, &self.source_lang)?;
+        if confidence < self.min_asr_confidence {
+            return Ok(early_outcome(utterance.text, confidence, false, true));
+        }
+
+        let mut legs = Vec::new();
+        for target in &mut self.targets {
+            let translation = target.mt.translate(&utterance, &self.glossary)?;
+            let lower = translation.text.to_lowercase();
+            let glossary_terms: Vec<String> = self
+                .glossary
+                .find_matches(&self.source_lang, &target.lang, &utterance.text)
+                .into_iter()
+                .filter(|(_, tgt)| lower.contains(&tgt.to_lowercase()))
+                .map(|(_, tgt)| tgt.to_string())
+                .collect();
+            let (audio, _ttfa) = target.tts.synthesize(&translation)?;
+            legs.push(BroadcastLeg {
+                lang: target.lang.clone(),
+                translation: translation.text,
+                audio,
+                glossary_terms,
+            });
+        }
+
+        Ok(BroadcastOutcome {
+            transcript: utterance.text,
+            confidence,
+            no_speech: false,
+            low_confidence: false,
+            legs,
+        })
+    }
+}
+
+fn early_outcome(
+    transcript: String,
+    confidence: f32,
+    no_speech: bool,
+    low_confidence: bool,
+) -> BroadcastOutcome {
+    BroadcastOutcome {
+        transcript,
+        confidence,
+        no_speech,
+        low_confidence,
+        legs: Vec::new(),
     }
 }
 

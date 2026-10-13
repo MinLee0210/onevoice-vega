@@ -20,8 +20,32 @@ export type CycleResult = {
   confidence: number;
   no_speech: boolean;
   low_confidence: boolean;
+  glossary_terms: string[];
   telemetry: Telemetry;
 };
+
+export type BroadcastLeg = {
+  lang: string;
+  translation: string;
+  wav: number[];
+  glossary_terms: string[];
+};
+
+export type BroadcastResult = {
+  transcript: string;
+  confidence: number;
+  no_speech: boolean;
+  low_confidence: boolean;
+  legs: BroadcastLeg[];
+};
+
+/** Vega Air: transcribe once, then MT+TTS to each target. */
+export const broadcast = (
+  pcmWav: Uint8Array,
+  source: string,
+  targets: string[],
+): Promise<BroadcastResult> =>
+  invoke("broadcast", { pcmWav: Array.from(pcmWav), source, targets });
 
 export const isReady = (): Promise<boolean> => invoke("ready");
 

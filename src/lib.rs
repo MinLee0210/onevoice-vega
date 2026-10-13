@@ -18,4 +18,7 @@ pub mod error;
 pub mod pipeline;
 pub mod stages;
 
-pub use engine::{audio_to_wav, wav_to_audio, CycleOutcome, Engine, EngineConfig, Telemetry};
+pub use engine::{
+    audio_to_wav, wav_to_audio, BroadcastEngine, BroadcastEngineConfig, BroadcastLeg,
+    BroadcastOutcome, CycleOutcome, Engine, EngineConfig, Telemetry,
+};
