@@ -25,7 +25,9 @@ process complete utterances (≤10s), not partial/incremental audio.
 
 Vega Air is broadcast (operator-initiated), not conversational: the
 operator speaks into the ground station, and the payload plays the
-translation back in each target language sequentially.
+translation back in each target language sequentially. **Implemented**:
+`src/broadcast.rs` + `onevoice --broadcast en,zh,ko` (transcribe once, then
+MT+TTS per language, one output WAV each).
 
 ## Hardware target
 - Prototype: Rubik Pi 3 (Qualcomm Dragonwing QCS6490), 8-core Kryo 670 CPU,

@@ -8,6 +8,7 @@
 // No extra dead_code warnings should trigger.
 
 mod audio;
+mod broadcast;
 mod config;
 mod error;
 mod pipeline;
@@ -56,6 +57,13 @@ struct Cli {
     /// Directory containing glossary/eval data (see data/README.md)
     #[arg(long, default_value = "data")]
     data_dir: PathBuf,
+
+    /// Vega Air broadcast mode: comma-separated target languages (e.g.
+    /// "en,zh,ko"). Transcribes once, then translates+synthesizes each
+    /// language sequentially, writing `output_wav` as a template
+    /// (`out.wav` -> `out.<lang>.wav`).
+    #[arg(long, value_delimiter = ',')]
+    broadcast: Vec<String>,
 }
 
 fn main() {
@@ -70,26 +78,48 @@ fn main() {
         std::process::exit(1);
     });
 
-    let pipeline_config = PipelineConfig {
-        config: &config,
-        models_dir: &cli.models_dir,
-        data_dir: &cli.data_dir,
-        source_lang: &cli.source,
-        target_lang: &cli.target,
-        input_wav_path: &cli.input_wav,
-        output_wav_path: &cli.output_wav,
-    };
+    if cli.broadcast.is_empty() {
+        let pipeline_config = PipelineConfig {
+            config: &config,
+            models_dir: &cli.models_dir,
+            data_dir: &cli.data_dir,
+            source_lang: &cli.source,
+            target_lang: &cli.target,
+            input_wav_path: &cli.input_wav,
+            output_wav_path: &cli.output_wav,
+        };
 
-    let mut pipeline = Pipeline::new(pipeline_config).unwrap_or_else(|e| {
-        tracing::error!("failed to build pipeline: {e}");
-        std::process::exit(1);
-    });
+        let mut pipeline = Pipeline::new(pipeline_config).unwrap_or_else(|e| {
+            tracing::error!("failed to build pipeline: {e}");
+            std::process::exit(1);
+        });
 
-    // TODO: loop on PTT press-release cycles once audio_io is backed by
-    // live hardware capture instead of a fixed input file (see
-    // src/stages/audio_io.rs) -- one file in, one file out for now.
-    if let Err(e) = pipeline.run_once() {
-        tracing::error!("pipeline run failed: {e}");
-        std::process::exit(1);
+        // TODO: loop on PTT press-release cycles once audio_io is backed by
+        // live hardware capture instead of a fixed input file (see
+        // src/stages/audio_io.rs) -- one file in, one file out for now.
+        if let Err(e) = pipeline.run_once() {
+            tracing::error!("pipeline run failed: {e}");
+            std::process::exit(1);
+        }
+    } else {
+        let broadcast_config = broadcast::BroadcastConfig {
+            config: &config,
+            models_dir: &cli.models_dir,
+            data_dir: &cli.data_dir,
+            source_lang: &cli.source,
+            target_langs: &cli.broadcast,
+            input_wav: &cli.input_wav,
+            output_wav: &cli.output_wav,
+        };
+
+        let mut bc = broadcast::Broadcast::new(broadcast_config).unwrap_or_else(|e| {
+            tracing::error!("failed to build broadcast: {e}");
+            std::process::exit(1);
+        });
+
+        if let Err(e) = bc.run_once() {
+            tracing::error!("broadcast run failed: {e}");
+            std::process::exit(1);
+        }
     }
 }

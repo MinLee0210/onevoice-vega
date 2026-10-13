@@ -157,6 +157,14 @@ scripts/run_pipeline.sh
 ```
 This builds the release binary, runs the translation loop, and generates the output audio, printing full telemetry and latency budget checks.
 
+**Vega Air (broadcast)** — one spoken instruction to many languages. Transcribes
+once, then translates + synthesizes each target sequentially:
+
+```bash
+./target/release/onevoice in.wav out.wav --source vi --broadcast en,zh,ko
+# -> out.en.wav, out.zh.wav, out.ko.wav
+```
+
 ---
 
 ## 🧪 Evaluation & Benchmarks
