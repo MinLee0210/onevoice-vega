@@ -1,12 +1,14 @@
 // Browser mic capture (48 kHz mono, RNNoise's required input rate), WAV
 // encoding, and playback — no native audio code, so the demo needs no
-// cpal/ALSA port. NOTE: ScriptProcessorNode is deprecated; the production
-// path is an AudioWorklet (see docs/decisions/demo-frontend-design-2026-10.md).
+// cpal/ALSA port. Capture uses an AudioWorklet; ScriptProcessor is only a
+// compatibility fallback for older webviews.
 
 export const SAMPLE_RATE = 48_000;
 
 export type Recorder = {
   stop: () => Promise<Float32Array>;
+  /** The actual device rate; browsers may ignore the requested 48 kHz rate. */
+  sampleRate: number;
 };
 
 /** Starts capturing mic audio at 48 kHz mono. Call `stop()` to finish. */
@@ -16,19 +18,42 @@ export async function startRecording(): Promise<Recorder> {
   });
   const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
   const source = ctx.createMediaStreamSource(stream);
-  const processor = ctx.createScriptProcessor(4096, 1, 1);
-
   const chunks: Float32Array[] = [];
-  processor.onaudioprocess = (e) => {
-    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
-  source.connect(processor);
-  processor.connect(ctx.destination);
+  const silent = ctx.createGain();
+  silent.gain.value = 0;
+  let capture: AudioNode;
+  let workletUrl: string | undefined;
+
+  try {
+    const code = `class VegaCapture extends AudioWorkletProcessor {
+      process(inputs) {
+        const channel = inputs[0] && inputs[0][0];
+        if (channel) { const copy = new Float32Array(channel); this.port.postMessage(copy, [copy.buffer]); }
+        return true;
+      }
+    }
+    registerProcessor("vega-capture", VegaCapture);`;
+    workletUrl = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(workletUrl);
+    const node = new AudioWorkletNode(ctx, "vega-capture", { channelCount: 1 });
+    node.port.onmessage = (event) => chunks.push(new Float32Array(event.data));
+    capture = node;
+  } catch {
+    const fallback = ctx.createScriptProcessor(4096, 1, 1);
+    fallback.onaudioprocess = (event) => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    capture = fallback;
+  }
+
+  source.connect(capture);
+  capture.connect(silent);
+  silent.connect(ctx.destination);
 
   const stop = async (): Promise<Float32Array> => {
-    processor.disconnect();
+    capture.disconnect();
     source.disconnect();
+    silent.disconnect();
     stream.getTracks().forEach((t) => t.stop());
+    if (workletUrl) URL.revokeObjectURL(workletUrl);
     const total = chunks.reduce((n, c) => n + c.length, 0);
     const out = new Float32Array(total);
     let off = 0;
@@ -40,7 +65,23 @@ export async function startRecording(): Promise<Recorder> {
     return out;
   };
 
-  return { stop };
+  return { stop, sampleRate: ctx.sampleRate };
+}
+
+/** Linear resampling for captured mono PCM before the 48 kHz RNNoise path. */
+export function resampleMono(samples: Float32Array, fromRate: number, toRate = SAMPLE_RATE): Float32Array {
+  if (fromRate === toRate) return samples;
+  const length = Math.round(samples.length * toRate / fromRate);
+  const output = new Float32Array(length);
+  const ratio = fromRate / toRate;
+  for (let i = 0; i < length; i++) {
+    const position = i * ratio;
+    const left = Math.floor(position);
+    const right = Math.min(left + 1, samples.length - 1);
+    const mix = position - left;
+    output[i] = (samples[left] ?? 0) * (1 - mix) + (samples[right] ?? 0) * mix;
+  }
+  return output;
 }
 
 /** Encodes mono float32 samples as a 16-bit PCM WAV. */
@@ -78,29 +119,32 @@ export async function fileToWav48k(file: File): Promise<Uint8Array> {
   const bytes = await file.arrayBuffer();
   const ctx = new AudioContext();
   const decoded = await ctx.decodeAudioData(bytes);
-  let mono: Float32Array;
-  if (decoded.sampleRate === SAMPLE_RATE) {
-    mono = decoded.getChannelData(0);
-  } else {
-    const len = Math.ceil(decoded.duration * SAMPLE_RATE);
-    const off = new OfflineAudioContext(1, len, SAMPLE_RATE);
-    const src = off.createBufferSource();
-    src.buffer = decoded;
-    src.connect(off.destination);
-    src.start();
-    mono = (await off.startRendering()).getChannelData(0);
-  }
+  // Always render: this both resamples and downmixes stereo/multichannel files.
+  const len = Math.ceil(decoded.duration * SAMPLE_RATE);
+  const off = new OfflineAudioContext(1, len, SAMPLE_RATE);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const mono = (await off.startRendering()).getChannelData(0);
   await ctx.close();
   return encodeWav(mono, SAMPLE_RATE);
 }
 
 /** Plays WAV bytes through the speakers. */
-export async function playWav(bytes: Uint8Array): Promise<void> {
+/** Resolves only after playback ends, so broadcast legs cannot overlap. */
+export async function playWav(bytes: Uint8Array, onStart?: () => void): Promise<void> {
   const ctx = new AudioContext();
   const data = await ctx.decodeAudioData(bytes.buffer.slice(0) as ArrayBuffer);
   const src = ctx.createBufferSource();
   src.buffer = data;
   src.connect(ctx.destination);
-  src.onended = () => void ctx.close();
-  src.start();
+  await new Promise<void>((resolve) => {
+    src.onended = () => {
+      void ctx.close();
+      resolve();
+    };
+    src.start();
+    onStart?.();
+  });
 }

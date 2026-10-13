@@ -11,10 +11,12 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::State;
 
+use onevoice::audio::Translation;
 use onevoice::config::Config;
 use onevoice::engine::{
-    audio_to_wav, BroadcastEngine, BroadcastEngineConfig, CycleOutcome, Engine, EngineConfig,
+    BroadcastEngine, BroadcastEngineConfig, CycleOutcome, Engine, EngineConfig, audio_to_wav,
 };
+use onevoice::stages::tts::TtsEngine;
 use onevoice::wav_to_audio;
 
 /// Where the model/config/data tree lives. Overridable with `ONEVOICE_ROOT`;
@@ -30,9 +32,7 @@ impl AppPaths {
     fn resolve() -> Self {
         let root = std::env::var("ONEVOICE_ROOT")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
-            });
+            .unwrap_or_else(|_| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
         Self {
             configs: root.join("configs"),
             models: root.join("models"),
@@ -65,6 +65,7 @@ struct CycleResult {
     confidence: f32,
     no_speech: bool,
     low_confidence: bool,
+    glossary_terms: Vec<String>,
     telemetry: TelemetryDto,
 }
 
@@ -79,6 +80,7 @@ fn to_result(outcome: CycleOutcome) -> CycleResult {
         confidence: outcome.confidence,
         no_speech: outcome.no_speech,
         low_confidence: outcome.low_confidence,
+        glossary_terms: outcome.glossary_terms,
         telemetry: TelemetryDto {
             denoise_ms: te.denoise_ms,
             vad_ms: te.vad_ms,
@@ -113,6 +115,13 @@ struct EngineState {
 struct BroadcastState {
     engine: Option<BroadcastEngine>,
     key: (String, Vec<String>),
+}
+
+/// Keep only the currently selected text-to-speech voice resident.
+#[derive(Default)]
+struct TtsState {
+    engine: Option<TtsEngine>,
+    lang: String,
 }
 
 #[derive(Serialize)]
@@ -218,6 +227,46 @@ fn broadcast(
     })
 }
 
+/// Speak typed text directly through a local voice, without ASR or MT.
+#[tauri::command]
+fn speak_text(
+    text: String,
+    lang: String,
+    state: State<'_, Mutex<TtsState>>,
+    paths: State<'_, AppPaths>,
+) -> Result<Vec<u8>, String> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 280 {
+        return Err("Enter between 1 and 280 characters to speak.".into());
+    }
+    if !matches!(lang.as_str(), "vi" | "en" | "zh" | "ko") {
+        return Err("Unsupported speech language.".into());
+    }
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    if st.engine.is_none() || st.lang != lang {
+        st.engine = Some(
+            TtsEngine::load(
+                paths.models.join("tts").join(&lang),
+                &paths.models.join("tts"),
+            )
+            .map_err(|e| e.to_string())?,
+        );
+        st.lang = lang.clone();
+    }
+    let speech = Translation {
+        text: text.to_owned(),
+        lang,
+    };
+    let (audio, _) = st
+        .engine
+        .as_mut()
+        .expect("voice loaded above")
+        .synthesize(&speech)
+        .map_err(|e| e.to_string())?;
+    Ok(audio_to_wav(&audio))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -225,11 +274,13 @@ pub fn run() {
         .manage(AppPaths::resolve())
         .manage(Mutex::new(EngineState::default()))
         .manage(Mutex::new(BroadcastState::default()))
+        .manage(Mutex::new(TtsState::default()))
         .invoke_handler(tauri::generate_handler![
             ready,
             process_utterance,
             broadcast,
-            sample_wav
+            sample_wav,
+            speak_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

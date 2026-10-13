@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "vega-console",
-        "width": 800,
-        "height": 600
+        "title": "Vega Operations Console",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 760,
+        "minHeight": 620
       }
     ],
     "security": {

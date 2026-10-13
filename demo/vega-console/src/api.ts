@@ -52,6 +52,10 @@ export const broadcast = (
 
 export const isReady = (): Promise<boolean> => invoke("ready");
 
+/** Speaks text exactly as entered using one of the four local TTS voices. */
+export const speakText = (text: string, lang: string): Promise<number[]> =>
+  invoke("speak_text", { text, lang });
+
 /**
  * Runs one cycle on 48 kHz mono WAV bytes. `pcmWav` maps to the Rust
  * `pcm_wav: Vec<u8>` argument (Tauri converts camelCase → snake_case).
