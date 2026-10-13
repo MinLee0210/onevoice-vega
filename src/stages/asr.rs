@@ -209,11 +209,15 @@ impl AsrEngine {
         })
     }
 
-    pub fn transcribe(
+    /// Transcribes, returning the text plus a confidence score: the mean
+    /// log-probability of the generated tokens. The pipeline uses it to gate
+    /// hallucinated transcriptions on noise-only input (see `pipeline.rs`).
+    /// Closer to 0 = more confident.
+    pub fn transcribe_with_confidence(
         &mut self,
         audio: &AudioBuffer,
         lang: &str,
-    ) -> Result<Utterance, OneVoiceError> {
+    ) -> Result<(Utterance, f32), OneVoiceError> {
         tracing::debug!(lang, duration_ms = audio.duration_ms(), "running ASR");
 
         assert_eq!(
@@ -231,7 +235,8 @@ impl AsrEngine {
         let encoder_ms = t.elapsed().as_secs_f64() * 1000.0;
 
         let t = std::time::Instant::now();
-        let generated = self.run_decoder_greedy(&encoder_hidden_states, lang_token)?;
+        let (generated, confidence) =
+            self.run_decoder_greedy(&encoder_hidden_states, lang_token)?;
         let decoder_ms = t.elapsed().as_secs_f64() * 1000.0;
 
         tracing::info!(
@@ -247,10 +252,13 @@ impl AsrEngine {
             .decode(&generated, true)
             .map_err(|source| OneVoiceError::Asr(format!("tokenizer decode failed: {source}")))?;
 
-        Ok(Utterance {
-            text,
-            lang: lang.to_string(),
-        })
+        Ok((
+            Utterance {
+                text,
+                lang: lang.to_string(),
+            },
+            confidence,
+        ))
     }
 
     /// See module docs for why this isn't just `self.mel.compute(samples)`.
@@ -303,11 +311,13 @@ impl AsrEngine {
             .map(|view| view.to_owned())
     }
 
+    /// Returns the generated token ids and the mean per-token log-probability
+    /// (the confidence signal used by the pipeline's hallucination gate).
     fn run_decoder_greedy(
         &mut self,
         encoder_hidden_states: &ArrayD<f32>,
         lang_token: i64,
-    ) -> Result<Vec<u32>, OneVoiceError> {
+    ) -> Result<(Vec<u32>, f32), OneVoiceError> {
         let num_layers = self.spec.num_layers;
         let mut cache: Vec<LayerCache> = (0..num_layers)
             .map(|_| LayerCache::empty(&self.spec))
@@ -319,6 +329,8 @@ impl AsrEngine {
             NO_TIMESTAMPS_TOKEN_ID,
         ];
         let mut generated = Vec::new();
+        let mut logprob_sum = 0.0f64;
+        let mut logprob_n = 0usize;
 
         for step in 0..MAX_NEW_TOKENS {
             // Merged: one graph, `use_cache_branch` flips after step 0.
@@ -378,6 +390,8 @@ impl AsrEngine {
                 }
             }
             let next_id = seq2seq::argmax(&last_step_logits) as i64;
+            logprob_sum += log_softmax_at(&last_step_logits, next_id as usize) as f64;
+            logprob_n += 1;
 
             seq2seq::extract_present_caches(&outputs, &mut cache, step == 0)
                 .map_err(OneVoiceError::Asr)?;
@@ -399,8 +413,24 @@ impl AsrEngine {
             );
         }
 
-        Ok(generated)
+        let confidence = if logprob_n > 0 {
+            (logprob_sum / logprob_n as f64) as f32
+        } else {
+            f32::NEG_INFINITY
+        };
+        Ok((generated, confidence))
     }
+}
+
+/// Log-softmax evaluated at `idx` (logprob of the chosen token). Handles the
+/// `-inf` entries the suppress-token masking writes.
+fn log_softmax_at(logits: &[f32], idx: usize) -> f32 {
+    let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    if !max.is_finite() {
+        return f32::NEG_INFINITY;
+    }
+    let sum_exp: f32 = logits.iter().map(|&v| (v - max).exp()).sum();
+    logits[idx] - (max + sum_exp.ln())
 }
 
 /// Feeds for the merged decoder: `use_cache_branch` selects no-cache (step 0)
@@ -533,14 +563,17 @@ impl Asr {
         }
     }
 
-    pub fn transcribe(
+    /// Returns the transcript plus a confidence score (Whisper: mean token
+    /// log-prob; CTC: mean frame max-softmax prob). The two scales differ —
+    /// the pipeline's gate threshold is calibrated per backend.
+    pub fn transcribe_with_confidence(
         &mut self,
         audio: &AudioBuffer,
         lang: &str,
-    ) -> Result<Utterance, OneVoiceError> {
+    ) -> Result<(Utterance, f32), OneVoiceError> {
         match self {
-            Asr::Whisper(engine) => engine.transcribe(audio, lang),
-            Asr::Ctc(engine) => engine.transcribe(audio, lang),
+            Asr::Whisper(engine) => engine.transcribe_with_confidence(audio, lang),
+            Asr::Ctc(engine) => engine.transcribe_with_confidence(audio, lang),
         }
     }
 }
@@ -577,9 +610,12 @@ mod tests {
             .collect();
         let audio = AudioBuffer::new(samples, sample_rate);
 
-        let utterance = asr.transcribe(&audio, "vi").expect("transcribe failed");
+        let (utterance, confidence) = asr
+            .transcribe_with_confidence(&audio, "vi")
+            .expect("transcribe failed");
 
         assert_eq!(utterance.text.trim(), "nửa vòng trái đất hơn bảy năm.");
         assert_eq!(utterance.lang, "vi");
+        assert!(confidence.is_finite(), "confidence {confidence}");
     }
 }

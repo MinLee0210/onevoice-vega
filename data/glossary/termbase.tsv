@@ -9,3 +9,35 @@ helmet	mũ bảo hộ	helmet	安全帽	안전모
 danger	nguy hiểm	danger	危险	위험
 loading_dock	khu vực bốc xếp	loading dock	装卸区	하역장
 first_aid	sơ cứu	first aid	急救	응급처치
+pallet	pallet	pallet	托盘	팔레트
+pallet_jack	xe nâng tay	pallet jack	托盘搬运车	팔레트 잭
+conveyor	băng tải	conveyor	输送带	컨베이어
+machine_guard	tấm chắn máy	machine guard	机器防护罩	기계 보호 커버
+safety_boots	giày bảo hộ	safety boots	安全靴	안전화
+gloves	găng tay	gloves	手套	장갑
+ear_protection	nút tai chống ồn	ear protection	耳塞	귀마개
+safety_harness	dây an toàn	safety harness	安全带	안전벨트
+scaffolding	giàn giáo	scaffolding	脚手架	비계
+crane	cần cẩu	crane	起重机	크레인
+overhead_crane	cầu trục	overhead crane	桥式起重机	천장 크레인
+assembly_line	dây chuyền lắp ráp	assembly line	装配线	조립 라인
+quality_control	kiểm tra chất lượng	quality control	质量控制	품질 관리
+warehouse	kho hàng	warehouse	仓库	창고
+inventory	hàng tồn kho	inventory	库存	재고
+high_voltage	điện áp cao	high voltage	高压	고전압
+lockout_tagout	khóa nguồn	lockout tagout	锁定挂牌	잠금 표지
+electrical_panel	tủ điện	electrical panel	配电箱	배전반
+gas_leak	rò rỉ khí	gas leak	气体泄漏	가스 누출
+chemical_spill	tràn hóa chất	chemical spill	化学品泄漏	화학물질 유출
+respirator	mặt nạ phòng độc	respirator	防毒面具	방독면
+welding	hàn	welding	焊接	용접
+grinder	máy mài	grinder	角磨机	그라인더
+lubricant	dầu bôi trơn	lubricant	润滑油	윤활유
+valve	van	valve	阀门	밸브
+pipeline	đường ống	pipeline	管道	배관
+generator	máy phát điện	generator	发电机	발전기
+compressor	máy nén khí	compressor	压缩机	압축기
+torque_spec	lực siết	torque spec	扭矩规格	토크 사양
+shift_change	đổi ca	shift change	交接班	교대
+supervisor	giám sát	supervisor	主管	감독자
+evacuate	sơ tán	evacuate	疏散	대피

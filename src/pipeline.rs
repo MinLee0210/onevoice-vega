@@ -36,6 +36,20 @@ pub struct Pipeline {
     glossary: Glossary,
     tts: TtsEngine,
     latency_budget: LatencyBudgetConfig,
+    min_asr_confidence: f32,
+}
+
+/// Conservative default gate on ASR confidence. Whisper mean token log-prob
+/// for real speech is typically ≳ −1; noise/hallucination output is lower.
+/// Override with `ONEVOICE_MIN_ASR_CONFIDENCE` (the two backends have
+/// different scales — calibrate on-device; see `src/stages/asr.rs`).
+const DEFAULT_MIN_ASR_CONFIDENCE: f32 = -2.0;
+
+fn min_asr_confidence() -> f32 {
+    std::env::var("ONEVOICE_MIN_ASR_CONFIDENCE")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(DEFAULT_MIN_ASR_CONFIDENCE)
 }
 
 impl Pipeline {
@@ -83,6 +97,7 @@ impl Pipeline {
                 &cfg.models_dir.join("tts"),
             )?,
             latency_budget: cfg.config.latency_budget,
+            min_asr_confidence: min_asr_confidence(),
         })
     }
 
@@ -128,9 +143,29 @@ impl Pipeline {
         }
 
         let t = Instant::now();
-        let utterance = self.asr.transcribe(&trimmed, &self.source_lang)?;
+        let (utterance, asr_confidence) = self
+            .asr
+            .transcribe_with_confidence(&trimmed, &self.source_lang)?;
         let asr_ms = t.elapsed().as_secs_f64() * 1000.0;
-        tracing::info!(text = %utterance.text, lang = %utterance.lang, "ASR");
+        tracing::info!(
+            text = %utterance.text,
+            lang = %utterance.lang,
+            confidence = format!("{asr_confidence:.3}"),
+            "ASR"
+        );
+
+        // Whisper happily produces fluent text on noise-only input that VAD
+        // lets through. If the decoder is very unsure, treat it like "no
+        // speech" rather than translating a confident-sounding fabrication.
+        // On a real device this is the "didn't catch that" LED/haptic state.
+        if asr_confidence < self.min_asr_confidence {
+            tracing::warn!(
+                confidence = format!("{asr_confidence:.3}"),
+                threshold = self.min_asr_confidence,
+                "ASR confidence below threshold — skipping MT/TTS (likely noise)"
+            );
+            return Ok(());
+        }
 
         let t = Instant::now();
         let translation = self.mt.translate(&utterance, &self.glossary)?;
@@ -147,25 +182,47 @@ impl Pipeline {
             "latency through MT (CPU dev machine, NOT the Hexagon NPU target -- see AGENTS.md -> Latency target; TTS timed separately below)"
         );
 
+        // Streaming playback: open the output on the FIRST synthesized chunk
+        // and write as each sentence completes, so audio starts before the
+        // whole utterance is synthesized. `ttfa_ms` (release -> first audio)
+        // is the metric AGENTS.md targets at ≤1.2s.
+        let audio_io = &self.audio_io;
+        let mut playback: Option<crate::stages::audio_io::Playback> = None;
+        let first_audio_at: std::cell::Cell<Option<Instant>> = std::cell::Cell::new(None);
         let t = Instant::now();
-        let (audio_out, tts_first_chunk_ms) = self.tts.synthesize(&translation)?;
+        let tts_first_chunk_ms = self.tts.synthesize_streaming(&translation, &mut |chunk| {
+            if playback.is_none() {
+                playback = Some(audio_io.start_playback(chunk.sample_rate_hz)?);
+                first_audio_at.set(Some(Instant::now()));
+            }
+            playback.as_mut().expect("just set").write(&chunk.samples)
+        })?;
         let tts_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        let play_ms = {
+            let t = Instant::now();
+            if let Some(p) = playback.take() {
+                p.finalize()?;
+            }
+            t.elapsed().as_secs_f64() * 1000.0
+        };
+
+        let ttfa_ms = first_audio_at
+            .get()
+            .map(|t0| (t0 - release_start).as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
         tracing::info!(
             tts_first_chunk_ms = format!("{tts_first_chunk_ms:.1}"),
             tts_total_ms = format!("{tts_ms:.1}"),
+            ttfa_ms = format!("{ttfa_ms:.1}"),
             through_tts_ms = format!("{:.1}", release_start.elapsed().as_secs_f64() * 1000.0),
-            "TTS chunked (through_tts_ms is the full button-release -> synthesized-audio latency AGENTS.md targets at <=1.2s)"
+            "TTS streamed (ttfa_ms = button-release -> first audio; AGENTS.md targets <=1.2s)"
         );
-
-        let t = Instant::now();
-        self.audio_io.play(&audio_out)?;
-        let play_ms = t.elapsed().as_secs_f64() * 1000.0;
 
         // Device-I/O duration, informational only. With the file-based
         // stand-in this is file read + write; on real hardware `capture_ms`
-        // is the pre-release utterance and `play()` is streamed playback,
-        // neither of which is post-release latency, so this budget check is
-        // a proxy and may warn on-device by design.
+        // is the pre-release utterance and playback is streamed, neither of
+        // which is post-release latency, so this budget check is a proxy.
         let io_overhead_ms = capture_ms + play_ms;
         let total_ms = release_start.elapsed().as_secs_f64() * 1000.0;
 

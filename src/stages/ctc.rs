@@ -80,12 +80,13 @@ impl CtcAsrEngine {
     }
 
     /// `lang` is ignored (a CTC model is single-language) but kept for a
-    /// uniform signature with `AsrEngine`.
-    pub fn transcribe(
+    /// uniform signature with `AsrEngine`. Returns the transcript plus the
+    /// mean per-frame max-softmax probability (0..1) as a confidence signal.
+    pub fn transcribe_with_confidence(
         &mut self,
         audio: &AudioBuffer,
         lang: &str,
-    ) -> Result<Utterance, OneVoiceError> {
+    ) -> Result<(Utterance, f32), OneVoiceError> {
         if audio.sample_rate_hz != SAMPLE_RATE_HZ {
             return Err(OneVoiceError::Asr(format!(
                 "CTC ASR expects {SAMPLE_RATE_HZ}Hz input, got {}Hz",
@@ -114,6 +115,7 @@ impl CtcAsrEngine {
         let frames = logits.len() / vocab.max(1);
 
         let mut best = Vec::with_capacity(frames);
+        let mut conf_sum = 0.0f64;
         for t in 0..frames {
             let row = &logits[t * vocab..(t + 1) * vocab];
             let mut argmax = 0usize;
@@ -124,13 +126,26 @@ impl CtcAsrEngine {
                     argmax = i;
                 }
             }
+            // max-softmax prob for this frame = 1 / sum_j exp(x_j - max)
+            let sum_exp: f32 = row.iter().map(|&v| (v - best_val).exp()).sum();
+            if sum_exp.is_finite() && sum_exp > 0.0 {
+                conf_sum += (1.0 / sum_exp) as f64;
+            }
             best.push(argmax);
         }
+        let confidence = if frames > 0 {
+            (conf_sum / frames as f64) as f32
+        } else {
+            0.0
+        };
 
-        Ok(Utterance {
-            text: ctc_greedy_decode(&best, &self.id_to_token, self.blank_id),
-            lang: lang.to_string(),
-        })
+        Ok((
+            Utterance {
+                text: ctc_greedy_decode(&best, &self.id_to_token, self.blank_id),
+                lang: lang.to_string(),
+            },
+            confidence,
+        ))
     }
 }
 
@@ -221,10 +236,13 @@ mod tests {
             .collect();
         let audio = AudioBuffer::new(samples, sr);
 
-        let utterance = asr.transcribe(&audio, "vi").expect("transcribe failed");
+        let (utterance, confidence) = asr
+            .transcribe_with_confidence(&audio, "vi")
+            .expect("transcribe failed");
 
         assert!(!utterance.text.trim().is_empty(), "transcript was empty");
         assert_eq!(utterance.lang, "vi");
+        assert!((0.0..=1.0).contains(&confidence), "confidence {confidence}");
     }
 
     #[test]

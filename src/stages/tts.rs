@@ -157,19 +157,22 @@ impl TtsEngine {
         Ok(Self { backend })
     }
 
-    pub fn synthesize(
+    /// Synthesizes sentence-by-sentence and hands each chunk to `on_chunk` as
+    /// soon as it is ready (streaming playback: the caller can start writing
+    /// audio before the whole utterance is synthesized). Returns the
+    /// time-to-first-chunk in milliseconds.
+    pub fn synthesize_streaming(
         &mut self,
         translation: &Translation,
-    ) -> Result<(AudioBuffer, f64), OneVoiceError> {
+        on_chunk: &mut dyn FnMut(&AudioBuffer) -> Result<(), OneVoiceError>,
+    ) -> Result<f64, OneVoiceError> {
         tracing::debug!(lang = %translation.lang, "running TTS");
 
         let sentences = split_sentences(&translation.text);
         if sentences.is_empty() {
-            return Ok((AudioBuffer::new(Vec::new(), 16000), 0.0));
+            return Ok(0.0);
         }
 
-        let mut all_samples = Vec::new();
-        let mut sample_rate_hz = 0;
         let mut first_chunk_ms = 0.0;
 
         match &mut self.backend {
@@ -183,9 +186,8 @@ impl TtsEngine {
                         })?;
                     if i == 0 {
                         first_chunk_ms = t.elapsed().as_secs_f64() * 1000.0;
-                        sample_rate_hz = rate;
                     }
-                    all_samples.extend(samples);
+                    on_chunk(&AudioBuffer::new(samples, rate))?;
                 }
             }
             Backend::Mms {
@@ -215,12 +217,33 @@ impl TtsEngine {
                     if i == 0 {
                         first_chunk_ms = t.elapsed().as_secs_f64() * 1000.0;
                     }
-                    all_samples.extend(waveform.to_vec());
+                    on_chunk(&AudioBuffer::new(waveform.to_vec(), MMS_SAMPLE_RATE_HZ))?;
                 }
-                sample_rate_hz = MMS_SAMPLE_RATE_HZ;
             }
         }
 
+        Ok(first_chunk_ms)
+    }
+
+    /// Batch wrapper: synthesizes the whole utterance into one buffer. Used
+    /// by the tests; the pipeline streams via `synthesize_streaming`.
+    #[allow(dead_code)]
+    pub fn synthesize(
+        &mut self,
+        translation: &Translation,
+    ) -> Result<(AudioBuffer, f64), OneVoiceError> {
+        let mut all_samples = Vec::new();
+        let mut sample_rate_hz = 0u32;
+        let first_chunk_ms = self.synthesize_streaming(translation, &mut |chunk| {
+            if sample_rate_hz == 0 {
+                sample_rate_hz = chunk.sample_rate_hz;
+            }
+            all_samples.extend_from_slice(&chunk.samples);
+            Ok(())
+        })?;
+        if sample_rate_hz == 0 {
+            sample_rate_hz = 16_000;
+        }
         Ok((
             AudioBuffer::new(all_samples, sample_rate_hz),
             first_chunk_ms,

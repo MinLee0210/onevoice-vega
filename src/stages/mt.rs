@@ -548,6 +548,47 @@ mod tests {
         assert_eq!(translation.text, "forklift approaching sector three.");
     }
 
+    /// Held-out term-accuracy check against the real termbase
+    /// (`data/glossary/termbase.tsv`), on carrier sentences NOT used to tune
+    /// the logit bias. The ≥95%-glossary-accuracy claim needs a number like
+    /// this, not just the single tuned example. Requires `models/mt/vi-en`.
+    #[test]
+    #[ignore = "requires models/mt/vi-en and data/glossary"]
+    fn glossary_hits_held_out_terms() {
+        let mut engine = MtEngine::load("models/mt/vi-en").expect("failed to load MtEngine");
+        let glossary =
+            Glossary::load(std::path::Path::new("data/glossary")).expect("failed to load glossary");
+
+        let cases = [
+            ("Xe nâng đang đến gần khu vực số ba.", "forklift"),
+            ("Vui lòng đeo găng tay khi làm việc.", "gloves"),
+            ("Hàng đã được chuyển vào kho hàng.", "warehouse"),
+            ("Dừng máy ngay khi nghe báo động.", "alarm"),
+            ("Đội mũ bảo hộ trước khi vào xưởng.", "helmet"),
+        ];
+
+        let mut hits = 0;
+        for (src, term) in cases {
+            let utterance = Utterance {
+                text: src.to_string(),
+                lang: "vi".to_string(),
+            };
+            let out = engine
+                .translate(&utterance, "en", &glossary)
+                .expect("translate failed");
+            if out.text.to_lowercase().contains(&term.to_lowercase()) {
+                hits += 1;
+            } else {
+                eprintln!("MISS {src:?} -> {:?} (wanted {term:?})", out.text);
+            }
+        }
+        assert!(
+            hits * 100 / cases.len() >= 80,
+            "held-out term accuracy {hits}/{}",
+            cases.len()
+        );
+    }
+
     /// VI→ZH via an EN pivot: vi-en leg then en-zh leg. Requires both
     /// `models/mt/vi-en` and `models/mt/en-zh` on disk.
     #[test]

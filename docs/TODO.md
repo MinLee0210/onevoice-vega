@@ -75,8 +75,22 @@ Organisers' dates: prototype submission Sep 2026, field testing Oct 2026, finale
       field-test device choice and the
       "Dragonwing-native" pitch. A hosted AI Hub run is not a substitute for running on the
       real Rubik Pi 3, so keep the on-device smoke test above.
-- [ ] Business model answer (hardware margin / enterprise licensing / paid
-      vocab packs) — still open, 25% of judging.
+- [x] Business model answer (2026-10-13): docs/decisions/business-model-2026-10.md
+      — hardware margin + site/seat engine license + industry vocab packs +
+      deployment/support + Qualcomm ecosystem; explicitly not cloud/subscription.
+- [x] ASR confidence / no-speech gate (2026-10-13): pipeline gates low-confidence
+      transcripts (src/pipeline.rs, `ONEVOICE_MIN_ASR_CONFIDENCE`) so Whisper
+      hallucination on noise isn't translated. Needs on-device calibration.
+- [x] Streaming TTS playback (2026-10-13): src/stages/tts.rs + audio_io.rs stream
+      per sentence; pipeline reports `ttfa_ms` (release→first audio).
+- [x] Glossary scale-up (2026-10-13): termbase ~40 terms + held-out term-accuracy
+      test `glossary_hits_held_out_terms` (translations draft — native review).
+- [x] Nightly golden CI (2026-10-13): .github/workflows/nightly-golden.yml +
+      scripts/ci/golden.sh (fetches models-v3, runs model-backed golden tests +
+      BLEU/WER floors).
+- [x] MT error bars (2026-10-13): bootstrap 95% CIs in scripts/evaluate_mt.py.
+      COMET code path added but **blocked**: unbabel-comet's fastBPE native build
+      fails on macOS — run it on Linux/CI or a GPU box.
 
 ## Phase 2 — technical spec submission (submitted 03/08/2026)
 - [ ] Verify OneVoice IP/equity terms in FAQ (compare to QVIC precedent)

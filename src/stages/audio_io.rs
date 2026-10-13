@@ -79,36 +79,33 @@ impl AudioCapture {
         Ok(AudioBuffer::new(samples, spec.sample_rate))
     }
 
-    /// Writes the synthesized audio to `output_wav_path` -- stands in
-    /// for live speaker playback until real hardware exists.
-    pub fn play(&mut self, audio: &AudioBuffer) -> Result<(), OneVoiceError> {
+    /// Opens the output WAV for incremental (streaming) playback. The TTS
+    /// stage calls this on the first synthesized chunk so playback can start
+    /// before synthesis finishes — `play` below is the batch wrapper.
+    pub fn start_playback(&self, sample_rate_hz: u32) -> Result<Playback, OneVoiceError> {
         let spec = hound::WavSpec {
             channels: 1,
-            sample_rate: audio.sample_rate_hz,
+            sample_rate: sample_rate_hz,
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer =
-            hound::WavWriter::create(&self.output_wav_path, spec).map_err(|source| {
-                OneVoiceError::AudioIo(format!(
-                    "failed to create {}: {source}",
-                    self.output_wav_path.display()
-                ))
-            })?;
-        for &sample in &audio.samples {
-            let clamped = sample.clamp(-1.0, 1.0);
-            writer
-                .write_sample((clamped * i16::MAX as f32) as i16)
-                .map_err(|source| {
-                    OneVoiceError::AudioIo(format!("failed to write sample: {source}"))
-                })?;
-        }
-        writer.finalize().map_err(|source| {
+        let writer = hound::WavWriter::create(&self.output_wav_path, spec).map_err(|source| {
             OneVoiceError::AudioIo(format!(
-                "failed to finalize {}: {source}",
+                "failed to create {}: {source}",
                 self.output_wav_path.display()
             ))
         })?;
+        Ok(Playback { writer })
+    }
+
+    /// Writes the synthesized audio to `output_wav_path` in one shot. Kept
+    /// for tests / non-streaming callers; the pipeline streams via
+    /// `start_playback`.
+    #[allow(dead_code)]
+    pub fn play(&mut self, audio: &AudioBuffer) -> Result<(), OneVoiceError> {
+        let mut playback = self.start_playback(audio.sample_rate_hz)?;
+        playback.write(&audio.samples)?;
+        playback.finalize()?;
 
         tracing::debug!(
             path = %self.output_wav_path.display(),
@@ -116,6 +113,32 @@ impl AudioCapture {
             "wrote synthesized audio to wav file"
         );
         Ok(())
+    }
+}
+
+/// Incremental WAV writer used for streaming playback. Stays open across
+/// synthesized chunks; `finalize` must be called to flush the header.
+pub struct Playback {
+    writer: hound::WavWriter<std::io::BufWriter<std::fs::File>>,
+}
+
+impl Playback {
+    pub fn write(&mut self, samples: &[f32]) -> Result<(), OneVoiceError> {
+        for &sample in samples {
+            let clamped = sample.clamp(-1.0, 1.0);
+            self.writer
+                .write_sample((clamped * i16::MAX as f32) as i16)
+                .map_err(|source| {
+                    OneVoiceError::AudioIo(format!("failed to write sample: {source}"))
+                })?;
+        }
+        Ok(())
+    }
+
+    pub fn finalize(self) -> Result<(), OneVoiceError> {
+        self.writer.finalize().map_err(|source| {
+            OneVoiceError::AudioIo(format!("failed to finalize wav file: {source}"))
+        })
     }
 }
 

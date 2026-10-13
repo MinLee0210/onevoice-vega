@@ -1,0 +1,39 @@
+name: Nightly golden
+
+# Model-backed regression: the normal CI only runs formatting + unit tests
+# because the model artifacts are gitignored. This job fetches the models-v3
+# release bundle, runs the `#[ignore]`d model-backed tests (exact-reference
+# golden) and coarse quality floors (scripts/ci/golden.sh).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+
+jobs:
+  golden:
+    name: Golden (models + metrics)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cmake (espeak-rs-sys via piper-rs)
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Fetch models-v3 bundle (split parts)
+        run: |
+          tmp="$(mktemp -d)"
+          gh release download models-v3 --repo "${{ github.repository }}" \
+            --pattern 'onevoice_models_v3.tar.gz*' --dir "$tmp"
+          cat "$tmp"/onevoice_models_v3.tar.gz.part-* > "$tmp/bundle.tar.gz"
+          tar -xzf "$tmp/bundle.tar.gz"
+
+      - name: Golden metrics + model-backed tests
+        run: bash scripts/ci/golden.sh
