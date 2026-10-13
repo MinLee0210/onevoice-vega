@@ -33,6 +33,9 @@ SPEECH = {
     "ko": ("google/fleurs", "ko_kr", "test"),
 }
 PARALLEL = ["en-vi", "en-zh", "en-ko"]
+# Higher-quality VI-EN MT benchmark than OPUS-100 (PhoMT, EMNLP 2021). The
+# original is CC-BY-NC-ND; this mirror is a cleaned copy — internal eval only.
+PHOMT_REPO = "tuandunghcmut/PhoMT"
 NOISE_CATEGORIES = {
     "chainsaw", "engine", "hand_saw", "helicopter", "siren",
     "vacuum_cleaner", "washing_machine", "train",
@@ -84,6 +87,16 @@ def fetch_parallel(root: Path, n: int) -> None:
         print(f"  parallel/{pair}.tsv: {len(rows)} pairs")
 
 
+def fetch_phomt(root: Path, n: int) -> None:
+    """A PhoMT VI-EN test slice (higher-quality MT benchmark than OPUS-100)."""
+    out = root / "parallel"
+    out.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset(PHOMT_REPO, split="test")
+    rows = [f"{ds[i]['vi']}\t{ds[i]['en']}" for i in range(min(n, len(ds)))]
+    (out / "phomt-test.vi-en.tsv").write_text("\n".join(rows) + "\n")
+    print(f"  parallel/phomt-test.vi-en.tsv: {len(rows)} pairs")
+
+
 def fetch_noise(root: Path, n: int) -> None:
     out = root / "noise"
     out.mkdir(parents=True, exist_ok=True)
@@ -107,24 +120,33 @@ def fetch_noise(root: Path, n: int) -> None:
     print(f"  noise/: {written} clips across {len(per_cat)} categories")
 
 
-def main(speech_n: int, parallel_n: int, noise_n: int, root: Path) -> int:
+def main(sets: list[str], speech_n: int, parallel_n: int, noise_n: int, phomt_n: int, root: Path) -> int:
     root.mkdir(parents=True, exist_ok=True)
-    print(f"writing samples to {root}")
-    print("== speech ==")
-    fetch_speech(root, speech_n)
-    print("== parallel ==")
-    fetch_parallel(root, parallel_n)
-    print("== noise ==")
-    fetch_noise(root, noise_n)
+    print(f"writing samples to {root} ({', '.join(sets)})")
+    if "speech" in sets:
+        print("== speech ==")
+        fetch_speech(root, speech_n)
+    if "parallel" in sets:
+        print("== parallel ==")
+        fetch_parallel(root, parallel_n)
+    if "phomt" in sets:
+        print("== phomt ==")
+        fetch_phomt(root, phomt_n)
+    if "noise" in sets:
+        print("== noise ==")
+        fetch_noise(root, noise_n)
     print("done")
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--datasets", nargs="*", default=["speech", "parallel", "phomt", "noise"],
+                        choices=["speech", "parallel", "phomt", "noise"])
     parser.add_argument("--speech-n", type=int, default=5)
     parser.add_argument("--parallel-n", type=int, default=100)
+    parser.add_argument("--phomt-n", type=int, default=200)
     parser.add_argument("--noise-n", type=int, default=12)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "data/raw")
     args = parser.parse_args()
-    raise SystemExit(main(args.speech_n, args.parallel_n, args.noise_n, args.out))
+    raise SystemExit(main(args.datasets, args.speech_n, args.parallel_n, args.noise_n, args.phomt_n, args.out))

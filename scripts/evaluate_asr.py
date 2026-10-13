@@ -27,6 +27,7 @@ import jiwer
 import numpy as np
 import soundfile as sf
 from datasets import Audio, load_dataset
+from eval_data import load_local_speech
 from transformers import pipeline
 
 DEFAULT_MODELS = ["vinai/PhoWhisper-base", "Qwen/Qwen3-ASR-0.6B-hf"]
@@ -119,9 +120,19 @@ def build_runner(model_id: str):
     return run_pipe
 
 
-def main(models: list[str], n: int, snr_levels: list[int | None], out: Path) -> int:
-    samples = load_samples(n)
-    print(f"loaded {len(samples)} VIVOS samples")
+def main(
+    models: list[str],
+    n: int,
+    snr_levels: list[int | None],
+    out: Path,
+    speech_dir: Path | None = None,
+) -> int:
+    if speech_dir:
+        samples = load_local_speech(speech_dir)[:n]
+        print(f"loaded {len(samples)} local samples from {speech_dir}")
+    else:
+        samples = load_samples(n)
+        print(f"loaded {len(samples)} VIVOS samples")
 
     rows = [
         "| model | condition | WER | latency/utt | RTF | n |",
@@ -177,6 +188,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-samples", type=int, default=20)
     parser.add_argument("--snr", nargs="*", default=["clean", "5"])
     parser.add_argument("--out", type=Path, default=Path("docs/reports/asr_ab.md"))
+    parser.add_argument("--speech-dir", type=Path, default=None,
+                        help="use a local dir (data/raw/speech/<lang>) instead of VIVOS")
     args = parser.parse_args()
     snrs = [None if s == "clean" else int(s) for s in args.snr]
-    raise SystemExit(main(args.models, args.num_samples, snrs, args.out))
+    raise SystemExit(main(args.models, args.num_samples, snrs, args.out, args.speech_dir))

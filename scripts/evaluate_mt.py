@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import sacrebleu
 import torch
+from eval_data import load_local_parallel
 from transformers import MarianMTModel, MarianTokenizer
 
 LEGS = [
@@ -97,13 +98,23 @@ def comet_score(srcs, hyps, refs) -> float:
     return float(comet_model().predict(data, batch_size=8, gpus=0)["system_score"])
 
 
-def main(n: int, legs: list[str], use_comet: bool, out: Path | None) -> int:
+def main(
+    n: int,
+    legs: list[str],
+    use_comet: bool,
+    out: Path | None,
+    parallel_dir: Path | None = None,
+    prefer_phomt: bool = False,
+) -> int:
     results: dict[str, float] = {}
     rows = ["| leg | model | BLEU | chrF | COMET | n |", "|---|---|---|---|---|---|"]
     for name, model_id, config, src, tgt in LEGS:
         if legs and name not in legs:
             continue
-        pairs = opus100(config, n)
+        if parallel_dir:
+            pairs = load_local_parallel(parallel_dir, config, n, prefer_phomt=prefer_phomt)
+        else:
+            pairs = opus100(config, n)
         srcs = [p[src] for p in pairs]
         refs = [p[tgt] for p in pairs]
         hyp = translate(srcs, model_id)
@@ -153,5 +164,9 @@ if __name__ == "__main__":
     parser.add_argument("--legs", nargs="*", default=[])
     parser.add_argument("--comet", action="store_true")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--parallel-dir", type=Path, default=None,
+                        help="use local TSVs from data/raw/parallel/ instead of OPUS-100")
+    parser.add_argument("--phomt", action="store_true",
+                        help="use the higher-quality PhoMT slice for the VI-EN leg")
     args = parser.parse_args()
-    raise SystemExit(main(args.n, args.legs, args.comet, args.out))
+    raise SystemExit(main(args.n, args.legs, args.comet, args.out, args.parallel_dir, args.phomt))

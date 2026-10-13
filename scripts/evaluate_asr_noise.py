@@ -28,6 +28,7 @@ import librosa
 import numpy as np
 import soundfile as sf
 from datasets import Audio, load_dataset
+from eval_data import load_local_noise, load_local_speech
 from evaluate_asr import build_runner, load_samples, normalize_text
 
 INDUSTRIAL = {
@@ -75,11 +76,26 @@ def load_industrial_noise(sr: int = 16_000) -> list[np.ndarray]:
     return pool
 
 
-def main(model_id: str, n: int, snrs: list[int], out: Path) -> int:
-    samples = load_samples(n)
-    print(f"loaded {len(samples)} VIVOS samples")
-    pool = load_industrial_noise()
-    print(f"loaded {len(pool)} industrial noise clips from ESC-50")
+def main(
+    model_id: str,
+    n: int,
+    snrs: list[int],
+    out: Path,
+    speech_dir: Path | None = None,
+    noise_dir: Path | None = None,
+) -> int:
+    if speech_dir:
+        samples = load_local_speech(speech_dir)[:n]
+        print(f"loaded {len(samples)} local speech samples from {speech_dir}")
+    else:
+        samples = load_samples(n)
+        print(f"loaded {len(samples)} VIVOS samples")
+    if noise_dir:
+        pool = load_local_noise(noise_dir)
+        print(f"loaded {len(pool)} local noise clips from {noise_dir}")
+    else:
+        pool = load_industrial_noise()
+        print(f"loaded {len(pool)} industrial noise clips from ESC-50")
 
     run = build_runner(model_id)
     rows = [
@@ -124,5 +140,11 @@ if __name__ == "__main__":
     parser.add_argument("--num-samples", type=int, default=30)
     parser.add_argument("--snr", nargs="*", type=int, default=[10, 5, 0])
     parser.add_argument("--out", type=Path, default=Path("docs/reports/asr_noise_real.md"))
+    parser.add_argument("--speech-dir", type=Path, default=None,
+                        help="local speech dir (data/raw/speech/<lang>) instead of VIVOS")
+    parser.add_argument("--noise-dir", type=Path, default=None,
+                        help="local noise dir (data/raw/noise) instead of ESC-50")
     args = parser.parse_args()
-    raise SystemExit(main(args.model, args.num_samples, args.snr, args.out))
+    raise SystemExit(
+        main(args.model, args.num_samples, args.snr, args.out, args.speech_dir, args.noise_dir)
+    )
