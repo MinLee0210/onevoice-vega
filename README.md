@@ -165,6 +165,11 @@ once, then translates + synthesizes each target sequentially:
 # -> out.en.wav, out.zh.wav, out.ko.wav
 ```
 
+**Desktop demo UI** — a Tauri app that drives the real engine over mic/PTT
+with a latency HUD: `demo/vega-console/` (see `demo/README.md`; design in
+`docs/decisions/demo-frontend-design-2026-10.md`). The engine is also usable
+as a library (`onevoice::Engine`, WAV bytes in/out + telemetry).
+
 ---
 
 ## 🧪 Evaluation & Benchmarks
