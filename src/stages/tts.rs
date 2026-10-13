@@ -106,6 +106,10 @@ enum Backend {
 
 pub struct TtsEngine {
     backend: Backend,
+    /// Piper VITS length scale (>1 = slower, more intelligible speech).
+    /// `None` = the voice's default. Used by Vega Air for broadcast-tuned
+    /// synthesis (outdoor SPL). Ignored by the MMS (KO) backend.
+    length_scale: Option<f32>,
 }
 
 impl TtsEngine {
@@ -154,7 +158,16 @@ impl TtsEngine {
             }
         };
 
-        Ok(Self { backend })
+        Ok(Self {
+            backend,
+            length_scale: None,
+        })
+    }
+
+    /// Sets a Piper length scale (>1 = slower, more intelligible) — the
+    /// broadcast-tuned rate for Vega Air. No effect on the MMS (KO) backend.
+    pub fn set_length_scale(&mut self, scale: f32) {
+        self.length_scale = Some(scale);
     }
 
     /// Synthesizes sentence-by-sentence and hands each chunk to `on_chunk` as
@@ -174,13 +187,14 @@ impl TtsEngine {
         }
 
         let mut first_chunk_ms = 0.0;
+        let length_scale = self.length_scale;
 
         match &mut self.backend {
             Backend::Piper(piper) => {
                 for (i, sentence) in sentences.iter().enumerate() {
                     let t = std::time::Instant::now();
                     let (samples, rate) = piper
-                        .create(sentence, false, None, None, None, None)
+                        .create(sentence, false, None, length_scale, None, None)
                         .map_err(|source| {
                             OneVoiceError::Tts(format!("Piper synthesis failed: {source}"))
                         })?;

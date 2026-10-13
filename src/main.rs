@@ -7,19 +7,13 @@
 // LatencyBudgetConfig) is loaded and checked at the end of each run.
 // No extra dead_code warnings should trigger.
 
-mod audio;
-mod broadcast;
-mod config;
-mod error;
-mod pipeline;
-mod stages;
-
 use std::path::PathBuf;
 
 use clap::Parser;
 
-use config::Config;
-use pipeline::{Pipeline, PipelineConfig};
+use onevoice::broadcast::{Broadcast, BroadcastConfig};
+use onevoice::config::Config;
+use onevoice::pipeline::{Pipeline, PipelineConfig};
 
 /// OneVoice: on-device VI<->EN/ZH/KO speech translation for noisy
 /// industrial environments. See AGENTS.md for the full project spec.
@@ -102,7 +96,7 @@ fn main() {
             std::process::exit(1);
         }
     } else {
-        let broadcast_config = broadcast::BroadcastConfig {
+        let broadcast_config = BroadcastConfig {
             config: &config,
             models_dir: &cli.models_dir,
             data_dir: &cli.data_dir,
@@ -112,7 +106,7 @@ fn main() {
             output_wav: &cli.output_wav,
         };
 
-        let mut bc = broadcast::Broadcast::new(broadcast_config).unwrap_or_else(|e| {
+        let mut bc = Broadcast::new(broadcast_config).unwrap_or_else(|e| {
             tracing::error!("failed to build broadcast: {e}");
             std::process::exit(1);
         });

@@ -19,6 +19,11 @@ use crate::stages::mt::MtChain;
 use crate::stages::tts::TtsEngine;
 use crate::stages::vad::Vad;
 
+/// Broadcast-tuned TTS rate: >1 spells each sentence out a little slower for
+/// outdoor intelligibility (AGENTS.md → Vega Air). Applies to Piper voices
+/// (EN/ZH); the MMS (KO) backend ignores it.
+const BROADCAST_LENGTH_SCALE: f32 = 1.15;
+
 struct Target {
     lang: String,
     mt: MtChain,
@@ -45,23 +50,6 @@ pub struct Broadcast {
     asr: Asr,
     glossary: Glossary,
     targets: Vec<Target>,
-}
-
-/// Builds an `MtChain` for a pair (direct or EN-pivot) — mirrors
-/// `Pipeline::new`.
-fn build_mt_chain(
-    pair: &crate::config::LanguagePair,
-    models_dir: &Path,
-) -> Result<MtChain, OneVoiceError> {
-    match &pair.pivot {
-        Some(p) => MtChain::pivot(
-            models_dir.join(&pair.mt_model_dir),
-            &p.lang,
-            models_dir.join(&p.mt_model_dir),
-            &pair.target,
-        ),
-        None => MtChain::direct(models_dir.join(&pair.mt_model_dir), &pair.target),
-    }
 }
 
 /// `out.wav` -> `out.<lang>.wav`.
@@ -102,13 +90,15 @@ impl Broadcast {
                     source_lang: cfg.source_lang.to_string(),
                     target_lang: target_lang.clone(),
                 })?;
+            let mut tts = TtsEngine::load(
+                cfg.models_dir.join(&pair.tts_model_dir),
+                &cfg.models_dir.join("tts"),
+            )?;
+            tts.set_length_scale(BROADCAST_LENGTH_SCALE);
             targets.push(Target {
                 lang: target_lang.clone(),
-                mt: build_mt_chain(pair, cfg.models_dir)?,
-                tts: TtsEngine::load(
-                    cfg.models_dir.join(&pair.tts_model_dir),
-                    &cfg.models_dir.join("tts"),
-                )?,
+                mt: crate::engine::build_mt_chain(pair, cfg.models_dir)?,
+                tts,
                 output_wav: target_path(cfg.output_wav, target_lang),
             });
         }
