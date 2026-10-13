@@ -36,4 +36,6 @@ jobs:
           tar -xzf "$tmp/bundle.tar.gz"
 
       - name: Golden metrics + model-backed tests
+        env:
+          GOLDEN_COMET: "1" # Linux builds unbabel-comet's fastBPE; macOS doesn't
         run: bash scripts/ci/golden.sh

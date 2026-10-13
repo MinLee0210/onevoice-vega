@@ -23,6 +23,7 @@ const FRAME_SIZE: usize = DenoiseState::FRAME_SIZE;
 
 pub struct Denoiser {
     state: Box<DenoiseState<'static>>,
+    bypass: bool,
 }
 
 impl Denoiser {
@@ -31,6 +32,18 @@ impl Denoiser {
     pub fn load() -> Self {
         Self {
             state: DenoiseState::new(),
+            bypass: false,
+        }
+    }
+
+    /// Denoising disabled: pass the raw 48 kHz audio straight through the
+    /// resampler (still 16 kHz out). For the noise-robustness **ablation** —
+    /// denoising can *raise* ASR WER on some noise, so the no-denoise arm
+    /// must be measurable (see docs/reports/asr_noise_real.md).
+    pub fn bypassed() -> Self {
+        Self {
+            state: DenoiseState::new(),
+            bypass: true,
         }
     }
 
@@ -41,6 +54,11 @@ impl Denoiser {
             audio.sample_rate_hz, INPUT_SAMPLE_RATE_HZ,
             "Denoiser expects {INPUT_SAMPLE_RATE_HZ}Hz input (RNNoise's fixed internal rate)"
         );
+
+        if self.bypass {
+            // No-denoise ablation arm: skip RNNoise, keep the resample.
+            return AudioBuffer::new(resample_48k_to_16k(&audio.samples), OUTPUT_SAMPLE_RATE_HZ);
+        }
 
         // Each PTT cycle is an independent utterance, so reset RNNoise's
         // recurrent state — otherwise the previous utterance's noise

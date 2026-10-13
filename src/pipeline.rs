@@ -52,6 +52,14 @@ fn min_asr_confidence() -> f32 {
         .unwrap_or(DEFAULT_MIN_ASR_CONFIDENCE)
 }
 
+/// `ONEVOICE_SKIP_DENOISE=1` runs the no-denoise ablation arm (RNNoise off,
+/// resample kept) — denoising can hurt ASR, so this must be measurable.
+fn skip_denoise() -> bool {
+    std::env::var("ONEVOICE_SKIP_DENOISE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 impl Pipeline {
     pub fn new(cfg: PipelineConfig) -> Result<Self, OneVoiceError> {
         let pair = cfg
@@ -85,7 +93,11 @@ impl Pipeline {
                 cfg.input_wav_path,
                 cfg.output_wav_path,
             ),
-            denoiser: Denoiser::load(),
+            denoiser: if skip_denoise() {
+                Denoiser::bypassed()
+            } else {
+                Denoiser::load()
+            },
             vad: Vad::load(cfg.models_dir.join("vad/model.onnx"))?,
             asr: Asr::load(cfg.models_dir.join(&pair.asr_model_dir))?,
             mt,

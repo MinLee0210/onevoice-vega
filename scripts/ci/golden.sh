@@ -36,4 +36,14 @@ echo "PhoWhisper clean WER = ${wer}%"
 awk -v w="$wer" -v m="$MAX_ASR_WER" 'BEGIN { exit (w+0 <= m+0) ? 0 : 1 }' \
   || { echo "FAIL: WER $wer% > $MAX_ASR_WER%"; exit 1; }
 
+# COMET is the judged MT metric but its fastBPE native build fails on macOS,
+# so run it only where it builds (Linux CI) — gate via GOLDEN_COMET=1.
+if [ "${GOLDEN_COMET:-0}" = "1" ]; then
+  echo "== COMET (judged metric) =="
+  uv run --no-project --python 3.12 --with "numpy>=2" --with torch \
+    --with transformers --with sentencepiece --with sacrebleu --with datasets \
+    --with unbabel-comet \
+    python scripts/evaluate_mt.py --n 200 --comet --legs vi-en --out /tmp/golden_comet.md
+fi
+
 echo "golden OK"

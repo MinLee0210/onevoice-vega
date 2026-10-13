@@ -4,6 +4,7 @@
 
 pub mod asr;
 pub mod audio_io;
+pub mod beamform;
 pub mod ctc;
 pub mod denoise;
 pub mod glossary;
