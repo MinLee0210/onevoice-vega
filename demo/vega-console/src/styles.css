@@ -1,91 +1,305 @@
+/* Vega Console — industrial control-panel aesthetic.
+   Grounded in the subject: a rugged, glove-operated PTT translator with
+   LED-only status. Graphite panel + ANSI safety-yellow, condensed signage
+   type for controls, monospace for readouts. See
+   docs/decisions/demo-frontend-design-2026-10.md. */
+
 :root {
-  --bg: #0c0f14;
-  --panel: #151a22;
-  --line: #242c38;
-  --text: #e6ebf2;
-  --muted: #8b97a8;
-  --accent: #22c55e;
-  --red: #ef4444;
-  --amber: #f59e0b;
-  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bg: #171b1f;
+  --panel: #232a30;
+  --panel-hi: #2b343b;
+  --bezel: #12151a;
+  --ink: #e9edf0;
+  --muted: #93a0a8;
+  --line: #39424a;
+  --hazard: #f4b400;
+  --hazard-ink: #1c1600;
+  --signal: #e04b4b;
+  --ok: #57b57a;
+  --led-off: #333c44;
+  --font-ui: "Helvetica Neue Condensed", "Arial Narrow", "Roboto Condensed",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background:
+    radial-gradient(120% 80% at 50% -10%, #1d2329 0%, var(--bg) 60%);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
-.app { max-width: 720px; margin: 0 auto; padding: 20px; }
-
-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.brand { font-weight: 800; letter-spacing: 4px; font-size: 20px; }
-.badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); }
-.badge.offline { color: var(--accent); border-color: #1f3f2c; background: #0f1f16; margin-left: auto; }
-
-.controls { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-select, .swap {
-  background: var(--panel); color: var(--text); border: 1px solid var(--line);
-  border-radius: 10px; padding: 8px 12px; font-size: 15px;
+/* The panel: a recessed instrument faceplate. */
+.app {
+  max-width: 760px;
+  margin: 28px auto;
+  padding: 0 0 18px;
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel) 42%);
+  border: 1px solid #0d1013;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px #00000066,
+    inset 0 1px 0 #ffffff12,
+    0 24px 60px -30px #000000cc;
 }
-.swap { cursor: pointer; }
-.pivot { color: var(--muted); font-size: 13px; }
 
-.ptt {
-  width: 100%; padding: 34px; font-size: 20px; font-weight: 700; letter-spacing: 1px;
-  color: var(--text); background: var(--panel); border: 2px solid var(--line);
-  border-radius: 18px; cursor: pointer; transition: all 0.12s ease;
+/* Nameplate strip. */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #00000066;
+  background: linear-gradient(180deg, #00000022, transparent);
+  position: relative;
 }
-.ptt:hover:not(:disabled) { border-color: #39465a; }
-.ptt.active { background: #2a0f12; border-color: var(--red); color: #ffd9dd; }
-.ptt:disabled { opacity: 0.5; cursor: default; }
+header::after {
+  /* hazard-stripe seam — used once, as a machine seam */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -4px; height: 4px;
+  background: repeating-linear-gradient(45deg,
+    var(--hazard) 0 10px, #17191b 10px 20px);
+  opacity: 0.85;
+}
+.brand {
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+  text-shadow: 0 1px 0 #000;
+}
 
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 84px; }
-.card label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-.card p { margin: 8px 0 0; font-size: 16px; line-height: 1.4; }
-
-.hud { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-.hud-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
-.bar { display: grid; grid-template-columns: 64px 1fr 56px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 4px 0; }
-.track { height: 8px; background: #0a0d12; border-radius: 4px; overflow: hidden; }
-.track > div { height: 100%; background: linear-gradient(90deg, #2563eb, var(--accent)); }
-
-.error { margin-top: 14px; padding: 12px; border-radius: 10px; background: #241014; border: 1px solid #4a1d22; color: #ffb4bc; font-size: 14px; }
-
-.modes { display: flex; gap: 4px; margin-left: 8px; }
+.modes { display: flex; gap: 3px; }
 .modes button {
-  background: transparent; color: var(--muted); border: 1px solid var(--line);
-  border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 13px;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: #1b2126;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 16px;
+  cursor: pointer;
 }
-.modes button.on { color: var(--text); border-color: #39465a; background: var(--panel); }
+.modes button.on {
+  color: var(--hazard-ink);
+  background: var(--hazard);
+  border-color: #00000055;
+  box-shadow: inset 0 -2px 0 #00000030;
+}
 
-.air-targets { display: flex; gap: 8px; }
-.tg {
-  display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
-  border: 1px solid var(--line); color: var(--muted); font-size: 14px; cursor: pointer;
+.badge.offline {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ok);
+  background: #0f1a13;
+  border: 1px solid #2245316b;
+  border-radius: 3px;
+  padding: 3px 9px;
 }
-.tg.on { color: var(--text); border-color: #1f4f38; background: #0f1f16; }
+
+/* Controls row. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px 4px;
+}
+select, .swap {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: #1b2126;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+.swap { cursor: pointer; padding: 8px 12px; }
+.pivot {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--hazard);
+  border: 1px dashed #6d5a00;
+  border-radius: 3px;
+  padding: 3px 7px;
+}
+.air-targets { display: flex; gap: 6px; }
+.tg {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: #1b2126;
+}
+.tg.on { color: var(--hazard-ink); background: var(--hazard); border-color: #00000055; }
 .tg input { display: none; }
 
-.card.full { grid-column: 1 / -1; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #101a2a; border: 1px solid #1e3a5f; color: #9cc4ff; }
-.legs { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.leg { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: start; }
-.leg-lang { font-weight: 700; color: var(--accent); }
-.leg-text { font-size: 15px; }
-
-.input-audio { display: flex; align-items: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
-.input-label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
-.filebtn {
-  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  background: var(--panel); color: var(--text); border: 1px solid var(--line);
-  border-radius: 10px; padding: 8px 14px; font-size: 14px;
+/* The PTT paddle — the one bold moment. A physical, beveled button. */
+.ptt {
+  display: block;
+  width: calc(100% - 40px);
+  margin: 14px 20px;
+  padding: 30px;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: linear-gradient(180deg, #2f3941, #212930);
+  border: 1px solid #0c0f12;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 0 #ffffff14,
+    inset 0 -4px 0 #00000055,
+    0 6px 0 #0b0e11,
+    0 10px 18px -8px #000000cc;
+  transition: transform 60ms ease, box-shadow 60ms ease, background 120ms ease;
 }
-.filebtn:hover { border-color: #39465a; }
+.ptt:hover:not(:disabled) { background: linear-gradient(180deg, #354049, #232b33); }
+.ptt:active:not(:disabled), .ptt.active {
+  transform: translateY(4px);
+  background: linear-gradient(180deg, #f7c62a, #e0a800);
+  color: var(--hazard-ink);
+  box-shadow:
+    inset 0 3px 8px #00000040,
+    inset 0 -2px 0 #00000022,
+    0 2px 0 #0b0e11;
+}
+.ptt:disabled { opacity: 0.55; cursor: default; }
+
+/* Status LEDs (device has no screen — state is LED + haptic). */
+.leds {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 20px 14px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+}
+.led { width: 10px; height: 10px; border-radius: 50%; background: var(--led-off); box-shadow: inset 0 0 0 1px #00000066; }
+.led.on { box-shadow: 0 0 8px currentColor, inset 0 0 0 1px #00000066; }
+.led.rec { color: var(--signal); background: var(--signal); }
+.led.work { color: var(--hazard); background: var(--hazard); }
+.led.done { color: var(--ok); background: var(--ok); }
+
+/* Input-audio strip. */
+.input-audio {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 0 20px 16px;
+}
+.input-label {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.filebtn {
+  cursor: pointer;
+  font: inherit; font-weight: 600; font-size: 13px;
+  color: var(--ink); background: #1b2126;
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 7px 12px;
+}
+.filebtn:hover { border-color: var(--hazard); color: var(--hazard); }
 .filebtn:disabled { opacity: 0.5; cursor: default; }
-.hint { color: var(--muted); font-size: 12px; }
+.hint { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+/* Readout windows — inset LCD panels. */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px; }
+.card {
+  background: #10151a;
+  border: 1px solid #0b0e11;
+  border-radius: 4px;
+  padding: 12px 14px;
+  box-shadow: inset 0 2px 6px #00000080;
+  min-height: 92px;
+}
+.card.full { grid-column: 1 / -1; }
+.card label {
+  display: block;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.card p {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1.45;
+  color: #eaf6e8;
+  word-break: break-word;
+}
+.card p:empty::before, .card p:only-child:not(:has(*)) { color: var(--muted); }
+
+/* Glossary stamps. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--hazard);
+  border: 1px solid #6d5a00;
+  border-radius: 3px;
+  padding: 2px 7px;
+  background: #1c1600;
+}
+
+.legs { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.leg { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: start; }
+.leg-lang {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  color: var(--hazard);
+}
+.leg-text { font-family: var(--font-mono); font-size: 15px; line-height: 1.45; }
+
+/* Latency HUD as a machine gauge. */
+.hud {
+  margin: 16px 20px 0;
+  padding: 12px 14px;
+  background: #10151a;
+  border: 1px solid #0b0e11;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 6px #00000080;
+}
+.hud-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+  margin-bottom: 10px;
+}
+.hud-head span:first-child { color: var(--ink); font-size: 15px; }
+.bar {
+  display: grid; grid-template-columns: 62px 1fr 52px; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  margin: 5px 0;
+}
+.track { height: 6px; background: #05080a; border-radius: 2px; overflow: hidden; }
+.track > div { height: 100%; background: linear-gradient(90deg, #8a6a00, var(--hazard)); }
+
+.error {
+  margin: 14px 20px 0;
+  padding: 11px 14px;
+  background: #1c0f0f;
+  border: 1px solid #5a2323;
+  border-left: 3px solid var(--signal);
+  border-radius: 4px;
+  color: #f3b7b7;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* Quality floor: focus, motion, responsive. */
+:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+@media (max-width: 560px) {
+  .cards { grid-template-columns: 1fr; }
+  .app { margin: 0; border-radius: 0; }
+  .ptt { font-size: 20px; padding: 24px; }
+}

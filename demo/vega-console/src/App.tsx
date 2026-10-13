@@ -17,6 +17,22 @@ function Chips({ terms }: { terms: string[] }) {
   );
 }
 
+/** Device status is LED-only (no screen on the real handheld). */
+function Leds({ phase }: { phase: Phase }) {
+  const label =
+    phase === "listening" ? "recording" :
+    phase === "translating" ? "translating" :
+    phase === "speaking" ? "playing" : "ready";
+  return (
+    <div className="leds">
+      <span className={`led ${phase === "listening" ? "rec on" : ""}`} />
+      <span className={`led ${phase === "translating" ? "work on" : ""}`} />
+      <span className={`led ${phase === "speaking" ? "done on" : ""}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 function Hud({ te, confidence }: { te: api.Telemetry; confidence: number }) {
   return (
     <section className="hud">
@@ -202,8 +218,16 @@ export default function App() {
         onMouseLeave={() => phase === "listening" && release()}
         disabled={!ready || busy}
       >
-        {phase === "listening" ? "● LISTENING…" : phase === "translating" ? "translating…" : "HOLD TO TALK · or Space"}
+        {phase === "listening"
+          ? "LIVE — release to translate"
+          : phase === "translating"
+            ? "TRANSLATING…"
+            : phase === "speaking"
+              ? "PLAYING…"
+              : "HOLD TO SPEAK"}
       </button>
+
+      <Leds phase={phase} />
 
       <section className="input-audio">
         <span className="input-label">Input audio</span>
