@@ -73,6 +73,27 @@ export function encodeWav(samples: Float32Array, sampleRate = SAMPLE_RATE): Uint
   return new Uint8Array(buf);
 }
 
+/** Decodes any browser-supported audio file into 48 kHz mono WAV bytes. */
+export async function fileToWav48k(file: File): Promise<Uint8Array> {
+  const bytes = await file.arrayBuffer();
+  const ctx = new AudioContext();
+  const decoded = await ctx.decodeAudioData(bytes);
+  let mono: Float32Array;
+  if (decoded.sampleRate === SAMPLE_RATE) {
+    mono = decoded.getChannelData(0);
+  } else {
+    const len = Math.ceil(decoded.duration * SAMPLE_RATE);
+    const off = new OfflineAudioContext(1, len, SAMPLE_RATE);
+    const src = off.createBufferSource();
+    src.buffer = decoded;
+    src.connect(off.destination);
+    src.start();
+    mono = (await off.startRendering()).getChannelData(0);
+  }
+  await ctx.close();
+  return encodeWav(mono, SAMPLE_RATE);
+}
+
 /** Plays WAV bytes through the speakers. */
 export async function playWav(bytes: Uint8Array): Promise<void> {
   const ctx = new AudioContext();

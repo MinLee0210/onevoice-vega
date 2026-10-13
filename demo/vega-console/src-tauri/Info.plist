@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required for microphone access. WKWebView (Tauri's macOS webview) only
+       exposes navigator.mediaDevices in a secure context, so the mic works in
+       a bundled build (`npm run tauri build`), not in `tauri dev` (plain
+       http://localhost). See demo/README.md. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Vega Console uses the microphone to capture speech for on-device translation.</string>
+</dict>
+</plist>

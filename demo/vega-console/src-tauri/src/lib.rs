@@ -92,6 +92,15 @@ fn to_result(outcome: CycleOutcome) -> CycleResult {
     }
 }
 
+/// Returns the committed VI eval fixture so the UI works without a mic
+/// (WKWebView only exposes `getUserMedia` in a secure context; `tauri dev`
+/// serves plain http, so the mic only works in a bundled build — see README).
+#[tauri::command]
+fn sample_wav(paths: State<'_, AppPaths>) -> Result<Vec<u8>, String> {
+    let p = paths.data.join("eval/ptt_sample_vi_48k.wav");
+    std::fs::read(&p).map_err(|e| format!("failed to read {}: {e}", p.display()))
+}
+
 /// One resident engine per active pair (models are expensive to load).
 #[derive(Default)]
 struct EngineState {
@@ -216,7 +225,12 @@ pub fn run() {
         .manage(AppPaths::resolve())
         .manage(Mutex::new(EngineState::default()))
         .manage(Mutex::new(BroadcastState::default()))
-        .invoke_handler(tauri::generate_handler![ready, process_utterance, broadcast])
+        .invoke_handler(tauri::generate_handler![
+            ready,
+            process_utterance,
+            broadcast,
+            sample_wav
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

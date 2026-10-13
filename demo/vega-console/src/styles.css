@@ -78,3 +78,14 @@ select, .swap {
 .leg { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: start; }
 .leg-lang { font-weight: 700; color: var(--accent); }
 .leg-text { font-size: 15px; }
+
+.input-audio { display: flex; align-items: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+.input-label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+.filebtn {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 14px; font-size: 14px;
+}
+.filebtn:hover { border-color: #39465a; }
+.filebtn:disabled { opacity: 0.5; cursor: default; }
+.hint { color: var(--muted); font-size: 12px; }

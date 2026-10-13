@@ -41,6 +41,22 @@ Build a distributable: `npm run tauri build` (outputs under
 - Note: mic capture uses the deprecated `ScriptProcessorNode` (simple, works);
   the production path is an `AudioWorklet`.
 
+## Input audio (no mic needed)
+
+The **Input audio** row has two buttons that run the engine without a mic:
+**⬆ Load audio file** (any sample rate — it's decoded and resampled to
+48 kHz client-side) and **▶ Use sample (VI)** (the committed eval fixture).
+Use these to check the UI, or when the mic is unavailable.
+
+## Microphone
+
+WKWebView (Tauri's macOS webview) only exposes `navigator.mediaDevices` in a
+**secure context**, so **the mic does not work in `tauri dev`** (plain
+`http://localhost`) — you'd see `navigator.mediaDevices` undefined. It works in
+a **bundled build** (`npm run tauri build`, served from `tauri://localhost`),
+which needs `src-tauri/Info.plist`'s `NSMicrophoneUsageDescription` (included).
+So: use **Input audio** while developing; use the built app for live PTT.
+
 ## Notes
 
 - The engine needs the full model set; first cycle loads models (~seconds),

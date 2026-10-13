@@ -39,6 +39,9 @@ export type BroadcastResult = {
   legs: BroadcastLeg[];
 };
 
+/** Returns the committed VI eval fixture (works without a mic). */
+export const sampleWav = (): Promise<number[]> => invoke("sample_wav");
+
 /** Vega Air: transcribe once, then MT+TTS to each target. */
 export const broadcast = (
   pcmWav: Uint8Array,

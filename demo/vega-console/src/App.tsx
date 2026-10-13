@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import { encodeWav, playWav, startRecording, type Recorder } from "./audio";
+import { encodeWav, fileToWav48k, playWav, startRecording, type Recorder } from "./audio";
 
 const LANGS: Record<string, string> = { vi: "VI", en: "EN", zh: "ZH", ko: "KO" };
 const ALL = ["en", "zh", "ko"];
@@ -12,9 +12,7 @@ function Chips({ terms }: { terms: string[] }) {
   if (!terms.length) return null;
   return (
     <div className="chips">
-      {terms.map((t) => (
-        <span className="chip" key={t}>🔒 {t}</span>
-      ))}
+      {terms.map((t) => <span className="chip" key={t}>🔒 {t}</span>)}
     </div>
   );
 }
@@ -52,6 +50,7 @@ export default function App() {
   const [bc, setBc] = useState<api.BroadcastResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const recorder = useRef<Recorder | null>(null);
+  const busy = phase === "listening" || phase === "translating" || phase === "speaking";
 
   useEffect(() => {
     api.isReady()
@@ -63,14 +62,50 @@ export default function App() {
       .catch((e) => { setError(String(e)); setPhase("error"); });
   }, []);
 
+  // Shared path for both mic and loaded-audio input.
+  const runWav = async (wav: Uint8Array) => {
+    setPhase("translating");
+    setError(null);
+    try {
+      if (mode === "hand") {
+        const res = await api.processUtterance(wav, source, target);
+        setResult(res);
+        if (res.no_speech || res.low_confidence) {
+          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — try again.");
+          setPhase("idle");
+          return;
+        }
+        setPhase("speaking");
+        await playWav(new Uint8Array(res.wav));
+      } else {
+        const res = await api.broadcast(wav, source, airTargets);
+        setBc(res);
+        if (res.no_speech || res.low_confidence || !res.legs.length) {
+          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — try again.");
+          setPhase("idle");
+          return;
+        }
+        setPhase("speaking");
+        for (const leg of res.legs) await playWav(new Uint8Array(leg.wav));
+      }
+      setPhase("idle");
+    } catch (e) {
+      setError(String(e));
+      setPhase("error");
+    }
+  };
+
   const press = async () => {
-    if (!ready || phase === "listening" || phase === "translating") return;
+    if (!ready || busy) return;
     setError(null);
     try {
       recorder.current = await startRecording();
       setPhase("listening");
     } catch (e) {
-      setError(`Mic error: ${e}`);
+      setError(
+        `Mic unavailable (${e}). In \`tauri dev\` the webview only exposes the mic in a secure ` +
+          `context — use "Load audio" / "Use sample" below instead.`,
+      );
       setPhase("error");
     }
   };
@@ -84,33 +119,26 @@ export default function App() {
       setPhase("idle");
       return;
     }
-    setPhase("translating");
+    await runWav(encodeWav(samples));
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
     try {
-      const wav = encodeWav(samples);
-      if (mode === "hand") {
-        const res = await api.processUtterance(wav, source, target);
-        setResult(res);
-        if (res.no_speech || res.low_confidence) {
-          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — say it again.");
-          setPhase("idle");
-          return;
-        }
-        setPhase("speaking");
-        await playWav(new Uint8Array(res.wav));
-      } else {
-        const res = await api.broadcast(wav, source, airTargets);
-        setBc(res);
-        if (res.no_speech || res.low_confidence || !res.legs.length) {
-          setError(res.no_speech ? "Didn't catch that — no speech." : "Low confidence — say it again.");
-          setPhase("idle");
-          return;
-        }
-        setPhase("speaking");
-        for (const leg of res.legs) await playWav(new Uint8Array(leg.wav));
-      }
-      setPhase("idle");
-    } catch (e) {
-      setError(String(e));
+      await runWav(await fileToWav48k(f));
+    } catch (err) {
+      setError(`Could not read audio: ${err}`);
+      setPhase("error");
+    }
+    e.target.value = "";
+  };
+
+  const loadSample = async () => {
+    try {
+      await runWav(new Uint8Array(await api.sampleWav()));
+    } catch (err) {
+      setError(String(err));
       setPhase("error");
     }
   };
@@ -125,7 +153,7 @@ export default function App() {
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   });
 
-  const pivot = (mode === "hand" && (["zh", "ko"].includes(target) || ["zh", "ko"].includes(source)));
+  const pivot = mode === "hand" && (["zh", "ko"].includes(target) || ["zh", "ko"].includes(source));
 
   return (
     <div className="app">
@@ -139,13 +167,13 @@ export default function App() {
       </header>
 
       <section className="controls">
-        <select value={source} onChange={(e) => setSource(e.target.value)} disabled={phase === "listening"}>
+        <select value={source} onChange={(e) => setSource(e.target.value)} disabled={busy}>
           {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         {mode === "hand" ? (
           <>
-            <button className="swap" onClick={() => { setSource(target); setTarget(source); }}>⇄</button>
-            <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={phase === "listening"}>
+            <button className="swap" onClick={() => { setSource(target); setTarget(source); }} disabled={busy}>⇄</button>
+            <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy}>
               {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             {pivot && <span className="pivot">via EN</span>}
@@ -157,10 +185,8 @@ export default function App() {
                 <input
                   type="checkbox"
                   checked={airTargets.includes(t)}
-                  disabled={phase === "listening" || phase === "translating"}
-                  onChange={(e) =>
-                    setAirTargets((prev) => (e.target.checked ? [...prev, t] : prev.filter((x) => x !== t)))
-                  }
+                  disabled={busy}
+                  onChange={(e) => setAirTargets((prev) => (e.target.checked ? [...prev, t] : prev.filter((x) => x !== t)))}
                 />
                 {LANGS[t]}
               </label>
@@ -174,10 +200,20 @@ export default function App() {
         onMouseDown={press}
         onMouseUp={release}
         onMouseLeave={() => phase === "listening" && release()}
-        disabled={!ready || phase === "translating"}
+        disabled={!ready || busy}
       >
         {phase === "listening" ? "● LISTENING…" : phase === "translating" ? "translating…" : "HOLD TO TALK · or Space"}
       </button>
+
+      <section className="input-audio">
+        <span className="input-label">Input audio</span>
+        <label className="filebtn">
+          ⬆ Load audio file
+          <input type="file" accept="audio/*,.wav" onChange={onFile} disabled={busy} hidden />
+        </label>
+        <button className="filebtn" onClick={loadSample} disabled={busy}>▶ Use sample (VI)</button>
+        <span className="hint">any sample rate — resampled to 48 kHz</span>
+      </section>
 
       {mode === "hand" ? (
         <>
@@ -197,7 +233,7 @@ export default function App() {
       ) : (
         <section className="cards">
           <div className="card full">
-            <label>broadcast transcript ({LANGS[source]}) → {airTargets.map((t) => LANGS[t]).join(" / ")}</label>
+            <label>broadcast ({LANGS[source]}) → {airTargets.map((t) => LANGS[t]).join(" / ")}</label>
             <p>{bc?.transcript || "—"}</p>
             <div className="legs">
               {bc?.legs.map((leg) => (
