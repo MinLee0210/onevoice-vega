@@ -16,9 +16,10 @@ data/
 │               48kHz) for end-to-end `cargo run` testing of the full
 │               pipeline (RNNoise's fixed input rate, see
 │               src/stages/denoise.rs). Neither is a bulk dataset.
-└── raw/        raw corpora (VIVOS, Common Voice VI, MUSAN, factory
-                field recordings). Gitignored — never commit raw audio.
-                Keep fetch scripts in scripts/, not the data itself.
+└── raw/        raw corpora and curated samples (VIVOS/FLEURS speech,
+                OPUS-100 parallel sentences, ESC-50 industrial noise).
+                Gitignored — never commit raw audio. Populate with
+                `python scripts/fetch_samples.py` (see raw/README.md).
 ```
 
 Anything above a few MB belongs in `raw/` or `eval/` and stays out of

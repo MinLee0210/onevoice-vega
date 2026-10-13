@@ -248,6 +248,7 @@ models/tts/espeak-ng-data/*
 # Raw / bulk data (never commit audio corpora, see data/README.md)
 data/raw/**
 !data/raw/.gitkeep
+!data/raw/README.md
 data/eval/**/*.wav
 data/eval/**/*.flac
 # ...except small, intentionally-committed test fixtures (see data/README.md)
